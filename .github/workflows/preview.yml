@@ -56,7 +56,7 @@ jobs:
         if: steps.changes.outputs.build == 'true'
         run: |
           # Match the CLI to upstream's pinned core rather than npm's latest release.
-          version=$(sed -n 's/^  vite-plus: //p' upstream/pnpm-workspace.yaml)
+          version=$(sed -nE 's/^  vite-plus: ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' upstream/pnpm-workspace.yaml)
           test -n "$version"
           bash scripts/ci-run.sh npm install -g "vite-plus@$version"
       - uses: actions/cache@v4
