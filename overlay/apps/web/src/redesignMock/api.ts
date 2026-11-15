@@ -1,0 +1,64 @@
+// Everything a lane needs, from one import: `import { thread, turn, ... } from "~/redesignMock/api";`
+export { ago, agoIso, fromNow, fromNowIso, now, plus, spanMs, type Span } from "./kernel/clock";
+export {
+  CLAUDE,
+  CODEX,
+  DEFAULT_MODEL,
+  ENVIRONMENT_ID,
+  MODELS,
+  PLANTED_PROJECTS,
+  projectIdOf,
+  workspaceRootOf,
+  type PlantedProjectKey,
+} from "./kernel/constants";
+export {
+  environment,
+  onCommand,
+  provider,
+  rpc,
+  stream,
+  type HandlerContext,
+  type MockDefinition,
+  type ProjectDefinition,
+  type ScenarioMeta,
+  type ThreadDefinition,
+} from "./kernel/definitions";
+export {
+  approval,
+  assistant,
+  command,
+  emptyProjection,
+  fileChange,
+  item,
+  itemBase,
+  MOCK_PROVIDER_SESSION,
+  planId,
+  question,
+  reasoning,
+  thread,
+  turn,
+  userMessage,
+  visibleItemsOf,
+  type ItemBase,
+  type ItemContext,
+  type ItemSpec,
+  type ThreadSpec,
+  type TurnSpec,
+} from "./kernel/dsl";
+export { BASELINE_PROVIDERS, CLAUDE_PROVIDER, CODEX_PROVIDER } from "./kernel/baseline";
+export {
+  alwaysWorking,
+  ask,
+  exec,
+  hold,
+  pause,
+  RunHandle,
+  say,
+  script,
+  status,
+  step,
+  think,
+  type RunScript,
+  type ScriptStep,
+} from "./kernel/script";
+export type { MockServer } from "./kernel/server";
