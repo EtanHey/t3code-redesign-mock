@@ -34,11 +34,17 @@ cp "$out/index.html" "$out/404.html"
 cat > "$out/vercel.json" <<'JSON'
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
-  "headers": [{ "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] }]
+  "headers": [
+    { "source": "/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
+    { "source": "/assets/:file([^/]+-[A-Za-z0-9_-]{8}\\.[^/]+)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
+    { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
+    { "source": "/(index.html|build-info.json)", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] }
+  ]
 }
 JSON
 cat > "$out/build-info.json" <<JSON
 {
+  "mockCommit": "${MOCK_REPO_COMMIT:-$(git -C "$root" rev-parse HEAD)}",
   "upstreamRepository": "pingdotgg/t3code",
   "upstreamBranch": "$branch",
   "upstreamCommit": "$commit",

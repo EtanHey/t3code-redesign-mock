@@ -1,0 +1,105 @@
+name: Hourly preview
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even when published commits match
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  issues: write
+  actions: read
+concurrency:
+  group: preview-production
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      npm_config_store_dir: ${{ runner.temp }}/pnpm-store
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Resolve changes
+        id: changes
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          upstream=$(git ls-remote https://github.com/pingdotgg/t3code.git refs/heads/maria/redesign/6-workspace-panes | cut -f1)
+          test -n "$upstream"
+          main=$(git rev-parse HEAD)
+          echo "upstream=$upstream" >> "$GITHUB_OUTPUT"
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          published=$(curl -fsSL --max-time 10 'https://t3code-redesign-mock.vercel.app/build-info.json' || true)
+          if [ "$FORCE" != true ] && [ "$(jq -r '.upstreamCommit // empty' <<< "$published" 2>/dev/null || true)" = "$upstream" ] && [ "$(jq -r '.mockCommit // empty' <<< "$published" 2>/dev/null || true)" = "$main" ]; then
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.build == 'true'
+        with:
+          node-version: 24
+      - name: Clone upstream
+        if: steps.changes.outputs.build == 'true'
+        run: |
+          git clone --depth 1 --branch maria/redesign/6-workspace-panes https://github.com/pingdotgg/t3code.git upstream
+          test "$(git -C upstream rev-parse HEAD)" = '${{ steps.changes.outputs.upstream }}'
+      - name: Install vite-plus
+        if: steps.changes.outputs.build == 'true'
+        run: bash scripts/ci-run.sh npm install -g vite-plus
+      - uses: actions/cache@v4
+        if: steps.changes.outputs.build == 'true'
+        with:
+          path: ${{ runner.temp }}/pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('upstream/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+      - name: Install dependencies
+        if: steps.changes.outputs.build == 'true'
+        run: cd upstream && bash ../scripts/ci-run.sh vp install --ignore-scripts --filter '@t3tools/scripts...' --filter '@t3tools/web...'
+      - name: Install Chromium
+        if: steps.changes.outputs.build == 'true'
+        run: cd upstream/apps/web && bash ../../../scripts/ci-run.sh vp exec playwright install --with-deps chromium
+      - name: Check, build and smoke
+        if: steps.changes.outputs.build == 'true'
+        env:
+          MOCK_REPO_COMMIT: ${{ steps.changes.outputs.main }}
+        run: |
+          bash scripts/ci-run.sh bash scripts/check.sh
+      - name: Publish site branch
+        if: steps.changes.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd dist
+          git init -q
+          git config user.name 'EtanHey'
+          git config user.email '93338119+EtanHey@users.noreply.github.com'
+          git add .
+          git commit -qm 'Publish preview'
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/site
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='Hourly build failing'
+          issue=$(gh issue list --state open --search 'Hourly build failing in:title' --json number,title --jq '.[] | select(.title == "Hourly build failing") | .number' | head -1)
+          failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '.jobs[] | select(.name == "publish") | .steps[] | select(.conclusion == "failure") | .name' | head -1)
+          { printf 'Run: %s\nFailing step: %s\n\nLast 60 check log lines, if available:\n\n```\n' "$RUN_URL" "${failed:-unknown}"; tail -60 "$RUNNER_TEMP/check.log" 2>/dev/null || true; printf '\n```\n\n🤖 Generated with GPT-6.1 Terra in T3 Code\n'; } > "$RUNNER_TEMP/issue.md"
+          if [ -n "$issue" ]; then gh issue comment "$issue" --body-file "$RUNNER_TEMP/issue.md"; else gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"; fi
+      - name: Close failure issue
+        if: success() && steps.changes.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --state open --search 'Hourly build failing in:title' --json number,title --jq '.[] | select(.title == "Hourly build failing") | .number' | while read -r issue; do gh issue close "$issue" --comment $'A subsequent build passed and was published.\n\n🤖 Generated with GPT-6.1 Terra in T3 Code'; done
