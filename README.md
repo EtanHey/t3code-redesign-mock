@@ -11,3 +11,12 @@ click through the redesign without building it. Nothing is real: no agents run a
 It rebuilds about hourly from the newest commit on `maria/redesign/6-workspace-panes`. This repo holds
 only the overlay (the fake server and fixtures) and the build pipeline; T3 Code itself is MIT licensed
 and copyright T3 Tools Inc. Not affiliated with T3 Tools.
+
+## How it stays current
+
+GitHub Actions checks hourly, on pushes to `main`, and when manually dispatched. It rebuilds when
+the upstream redesign tip or this repository's `main` changes; a manual dispatch can force a rebuild.
+See the [Actions tab](https://github.com/EtanHey/t3code-redesign-mock/actions) and
+[/build-info.json](https://t3code-redesign-mock.vercel.app/build-info.json) for the last build.
+A failed check leaves the previous site in place and opens or updates an issue; a successful build
+closes it.
