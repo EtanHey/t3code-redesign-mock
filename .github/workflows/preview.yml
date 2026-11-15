@@ -21,7 +21,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      npm_config_store_dir: ${{ runner.temp }}/pnpm-store
+      npm_config_store_dir: /tmp/preview-pnpm-store
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/cache@v4
         if: steps.changes.outputs.build == 'true'
         with:
-          path: ${{ runner.temp }}/pnpm-store
+          path: /tmp/preview-pnpm-store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('upstream/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
       - name: Install dependencies
