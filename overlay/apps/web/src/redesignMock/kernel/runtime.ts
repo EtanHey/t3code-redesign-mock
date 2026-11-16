@@ -18,6 +18,8 @@ import { agoIso, atTime, nowMs } from "./clock";
 import { ENVIRONMENT_ID, ENVIRONMENT_LABEL, PLANTED_PROJECTS, projectIdOf, workspaceRootOf } from "./constants";
 import { rpc, type AnyCommandReaction, type AnyStreamHandler, type AnyUnaryHandler } from "./definitions";
 import { MockAssets } from "./assets";
+import { withDefaultContextUsage } from "./defaults";
+import { fillScenarioIndex, scenarioIndexMarkdown } from "./scenarioIndex";
 import { MockEnvironment } from "./environment";
 import { VisitorLog, type LogEntry } from "./persistence";
 import { launchThread, reduceCommand } from "./reducer";
@@ -182,7 +184,8 @@ function boot(): MockRuntime {
       if (import.meta.env.DEV) throw new Error(message);
       console.error(message);
     }
-    environment.server.addThread(definition.projection, {
+    const planted = fillScenarioIndex(withDefaultContextUsage(definition.projection), () => scenarioIndexMarkdown(registry));
+    environment.server.addThread(planted, {
       definition,
       ...(definition.shell ? { shellPatch: definition.shell } : {}),
       ...(definition.olderSettled ? { olderSettled: true } : {}),

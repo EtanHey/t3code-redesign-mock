@@ -36,7 +36,7 @@ const withAttachments = thread({
   id: "k04-latency-attachments",
   project: "live",
   title: "Why did orders latency double?",
-  scenario: { id: "K04", label: "Message with image, CSV and markdown attachments", waitForText: "N+1 query" },
+  scenario: { id: "K04", family: "conversation", label: "Message with image, CSV and markdown attachments", waitForText: "N+1 query" },
   turns: [
     turn({
       at: "50m",
@@ -77,7 +77,7 @@ const viewed = [
     id: "k05-viewed-screenshot",
     project: "git",
     title: "Save button is unreadable in dark mode",
-    scenario: { id: "K05", label: "Viewed image and a screenshot tool output", waitForText: "contrast ratio" },
+    scenario: { id: "K05", family: "conversation", label: "Viewed image and a screenshot tool output", waitForText: "contrast ratio" },
     turns: [
       turn({
         at: "35m",
@@ -143,7 +143,7 @@ const htmlRender = [
     id: "k06-bundle-report",
     project: "git",
     title: "Which routes grew in the last release?",
-    scenario: { id: "K06", label: "html_render page", waitForText: "lazy-load the chart" },
+    scenario: { id: "K06", family: "conversation", label: "html_render page", waitForText: "lazy-load the chart" },
     turns: [
       turn({
         at: "1h 5m",
@@ -207,7 +207,7 @@ const mcpApp = [
     id: "k07-pipeline-app",
     project: "git",
     title: "Is the main pipeline green yet?",
-    scenario: { id: "K07", label: "MCP app frame", waitForText: "browser tests are still running" },
+    scenario: { id: "K07", family: "conversation", label: "MCP app frame", waitForText: "browser tests are still running" },
     turns: [
       turn({
         at: "6m",

@@ -28,7 +28,21 @@ export interface ScenarioMeta {
   readonly label: string;
   /** Text the smoke run waits for before it takes the screenshot. */
   readonly waitForText?: string;
+  /** The "Start here" index heading it goes under. Default: from the fixture's directory. */
+  readonly family?: ScenarioFamily;
+  /** One short line shown after the link in the "Start here" index. */
+  readonly blurb?: string;
 }
+
+export type ScenarioFamily =
+  | "conversation"
+  | "live"
+  | "requests"
+  | "errors"
+  | "agents"
+  | "git"
+  | "panes"
+  | "sidebar";
 
 export interface ThreadDefinition {
   readonly kind: "thread";

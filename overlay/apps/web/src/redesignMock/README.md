@@ -7,6 +7,8 @@ default-exports one definition or an array; import everything from `~/redesignMo
 
 Duplicates (thread id, scenario id, RPC method, command reaction) stop the boot naming both files.
 Your handler for a method the kernel answers (VCS status, refs, settings...) replaces the kernel's.
+`scenario.family` (`conversation live requests errors agents git panes sidebar`) and `blurb` place a
+thread in the generated "Start here" index; the family defaults to your fixture directory.
 Projects are keys: `start conversation live requests errors agents git sidebar`. The sidebar is a
 recency inbox (pinned first), so set `at` to order rows. Kernel scenario ids are `K00`-`K08`.
 
@@ -75,5 +77,5 @@ Unhandled RPCs never hang (silent stream, typed empty result, or a "not availabl
 
 `scripts/check.sh` typechecks, builds and smokes: every scenario must render with no errors and no
 request to another origin; screenshots land in `docs.local/shots/<scenario-id>.png`.
-`SMOKE_ONLY=E01,E02 node scripts/smoke.mjs` reruns a subset; `scripts/update-upstream.sh` moves
-`upstream/` to her newest tip. Content is public: invent everything.
+`node scripts/smoke.mjs --only E01,E02` reruns a few in seconds (each scenario gets a fresh
+browser); `scripts/update-upstream.sh` moves `upstream/` to her newest tip. Content is public: invent everything.

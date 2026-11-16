@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 
 import { agoIso, iso, now } from "./clock";
 import { CLAUDE, CODEX } from "./constants";
+import { usageLimits } from "./defaults";
 import { rpc, stream, type AnyStreamHandler, type AnyUnaryHandler, type MockDefinition } from "./definitions";
 import type { MockEnvironment } from "./environment";
 import type { Sourced } from "./registry";
@@ -50,12 +51,18 @@ function readyProvider(
   };
 }
 
-export const CODEX_PROVIDER = readyProvider(CODEX, "codex", "0.142.0", [
-  { slug: "gpt-6-astra", name: "GPT-6 Astra", isDefault: true },
-  { slug: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
-  { slug: "gpt-6.1-terra", name: "GPT-6.1 Terra" },
-  { slug: "gpt-6-luna", name: "GPT-6 Luna" },
-]);
+export const CODEX_PROVIDER = readyProvider(
+  CODEX,
+  "codex",
+  "0.142.0",
+  [
+    { slug: "gpt-6-astra", name: "GPT-6 Astra", isDefault: true },
+    { slug: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
+    { slug: "gpt-6.1-terra", name: "GPT-6.1 Terra" },
+    { slug: "gpt-6-luna", name: "GPT-6 Luna" },
+  ],
+  { usageLimits: usageLimits(38, 61) },
+);
 
 export const CLAUDE_PROVIDER = readyProvider(
   CLAUDE,
@@ -67,7 +74,10 @@ export const CLAUDE_PROVIDER = readyProvider(
     { slug: "claude-haiku-5-5", name: "Claude Haiku 5.5" },
     { slug: "claude-fable-5", name: "Claude Fable 5" },
   ],
-  { slashCommands: [{ name: "compact", description: "Summarize the conversation so far" }] },
+  {
+    slashCommands: [{ name: "compact", description: "Summarize the conversation so far" }],
+    usageLimits: usageLimits(22, 47),
+  },
 );
 
 export const BASELINE_PROVIDERS: ReadonlyArray<ServerProvider> = [CODEX_PROVIDER, CLAUDE_PROVIDER];

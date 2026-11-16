@@ -23,6 +23,7 @@ export {
   type HandlerContext,
   type MockDefinition,
   type ProjectDefinition,
+  type ScenarioFamily,
   type ScenarioMeta,
   type ThreadDefinition,
 } from "./kernel/definitions";

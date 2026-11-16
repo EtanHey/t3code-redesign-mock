@@ -18,7 +18,7 @@ export default [
     environmentId: BUILD_BOX,
     project: RENDER_FARM,
     title: "Drain the stuck GPU render queue",
-    scenario: { id: "K08", label: "Thread on a connected remote environment", waitForText: "queue is draining" },
+    scenario: { id: "K08", family: "sidebar", blurb: "a second, remote environment", label: "Thread on a connected remote environment", waitForText: "queue is draining" },
     turns: [
       turn({
         at: "22m",
