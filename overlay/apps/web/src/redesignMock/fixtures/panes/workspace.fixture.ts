@@ -39,6 +39,7 @@ const panes = thread({
   project: "git",
   title: "Workspace panes: chat, files and terminals",
   branch: "feature/region-table",
+  worktreePath: `${REPO_ROOT}/.worktrees/region-table`,
   scenario: { id: "P00", label: "Workspace with chat, file tabs and a terminal", waitForText: "region table" },
   turns: [
     turn({
@@ -107,6 +108,7 @@ const files = thread({
   project: "git",
   title: "Files: tree, search and previews",
   branch: "feature/region-table",
+  worktreePath: `${REPO_ROOT}/.worktrees/region-table`,
   scenario: { id: "P02", label: "Files tree and file previews", waitForText: "architecture notes" },
   turns: [
     turn({

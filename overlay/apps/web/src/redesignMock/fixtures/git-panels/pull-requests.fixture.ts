@@ -13,7 +13,9 @@ const lifecycle = rows.map((row) =>
     turns: [
       turn({
         at: "30m",
-        user: "Review the pull request status.",
+        user: row.id === "G03-failing"
+          ? "Review the failing pull request. Its panel is open: click Summary, Guide, Timeline and Code to explore the review."
+          : "Review the pull request status.",
         items: [
           assistant(
             `The linked pull request is ready to inspect. Open its badge for the summary, readiness card, checks, reviews, timeline and code. ${row.conflicting ? "The summary helper conflicts with main." : row.rebase ? "The branch is three commits behind main." : row.title + "."}`,

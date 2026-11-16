@@ -361,6 +361,10 @@ export function repoFor(cwd: string): VirtualRepo | null {
 /** Workspace-relative path for a path that may be absolute under the repo root. */
 export function relativeTo(repo: VirtualRepo, path: string): string {
   if (path === repo.root) return "";
+  // The panes threads share the region-table worktree, separately from the main checkout.
+  const worktreeRoot = `${repo.root}/.worktrees/region-table`;
+  if (path === worktreeRoot) return "";
+  if (path.startsWith(`${worktreeRoot}/`)) return path.slice(worktreeRoot.length + 1);
   if (path.startsWith(`${repo.root}/`)) return path.slice(repo.root.length + 1);
   return path.replace(/^\.\//, "").replace(/\/+$/, "");
 }

@@ -1,6 +1,6 @@
 import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
-import { now, rpc, stream } from "~/redesignMock/api";
+import { now, rpc, stream, type HandlerContext } from "~/redesignMock/api";
 import {
   changeFor,
   entries,
@@ -12,7 +12,23 @@ import {
   whitespacePatch,
 } from "../../fixtures/git-panels/data";
 
-function workspace(cwd: string) {
+function workspace(cwd: string, { server }: HandlerContext) {
+  const records = [...server.threads.values()].filter(({ projection }) => {
+    const t = projection.thread;
+    const root = server.projects.get(t.projectId)?.project.workspaceRoot;
+    return (t.worktreePath ?? root) === cwd;
+  });
+  // A cwd identifies a worktree. Shared project roots have one branch; do not borrow
+  // another worktree's status merely because its project has the same prefix.
+  const branch = records.find(({ projection }) => projection.thread.branch)?.projection.thread.branch ?? "main";
+  const changes = new Map<string, { path: string; insertions: number; deletions: number; status: "modified" }>();
+  for (const { projection } of records) {
+    for (const item of projection.turnItems) {
+      if (item.type !== "file_change") continue;
+      changes.set(item.fileName, { path: item.fileName, insertions: item.additions ?? 0,
+        deletions: item.deletions ?? 0, status: "modified" });
+    }
+  }
   const slug = cwd.split("/").at(-1) ?? "";
   const pr =
     entries.find((entry) => entry.headBranch.endsWith(`/${slug}`)) ??
@@ -26,6 +42,7 @@ function workspace(cwd: string) {
   const large = slug === "p03-large-diff";
   const truncated = slug === "p03-truncated-diff";
   const ours = cwd.startsWith("/workspace/orbit-dashboard/");
+  const panes = branch === "feature/region-table";
   const change = pr ? changeFor(pr.number) : undefined;
   const files = change
     ? [
@@ -41,12 +58,14 @@ function workspace(cwd: string) {
           deletions: 0,
           status: "added" as const,
         }))
-      : ours
+      : panes
+        ? [{ path: "src/components/RegionTable.tsx", insertions: 7, deletions: 3, status: "modified" as const }]
+        : ours
         ? [
             { path: "src/summary.ts", insertions: 3, deletions: 2, status: "modified" as const },
             { path: "src/summary.test.ts", insertions: 5, deletions: 0, status: "added" as const },
           ]
-        : [];
+        : [...changes.values()];
   if (slug === "p03-whitespace")
     files.push({ path: "src/theme.ts", insertions: 1, deletions: 1, status: "modified" });
   return {
@@ -57,24 +76,12 @@ function workspace(cwd: string) {
     large,
     truncated,
     slug,
-    branch:
-      pr?.headBranch ??
-      (slug === "g01-worktree-changes"
-        ? "feature/dashboard-summary"
-        : slug === "p03-large-diff"
-          ? "feature/activity-samples"
-          : slug === "p03-truncated-diff"
-            ? "feature/import-history"
-            : slug === "p03-whitespace"
-              ? "feature/summary-format"
-              : ours
-                ? `feature/${slug}`
-                : "main"),
+    branch,
   };
 }
 export default [
-  stream(WS_METHODS.subscribeVcsStatus, (input) => {
-    const w = workspace(input.cwd);
+  stream(WS_METHODS.subscribeVcsStatus, (input, context) => {
+    const w = workspace(input.cwd, context);
     const insertions = w.files.reduce((sum, f) => sum + f.insertions, 0);
     const deletions = w.files.reduce((sum, f) => sum + f.deletions, 0);
     return Stream.concat(
@@ -83,7 +90,7 @@ export default [
         local: {
           isRepo: true,
           hasPrimaryRemote: true,
-          isDefaultRef: !w.ours,
+          isDefaultRef: w.branch === "main",
           refName: w.branch,
           hasWorkingTreeChanges: w.files.length > 0,
           workingTree: { rootPath: input.cwd, files: w.files, insertions, deletions },
@@ -109,18 +116,18 @@ export default [
       Stream.never,
     );
   }),
-  rpc(WS_METHODS.vcsListRefs, (input) => {
-    const w = workspace(input.cwd);
+  rpc(WS_METHODS.vcsListRefs, (input, context) => {
+    const w = workspace(input.cwd, context);
     return {
       refs: [
         {
           name: w.branch,
           current: true,
-          isDefault: !w.ours,
-          worktreePath: w.ours ? input.cwd : null,
+          isDefault: w.branch === "main",
+          worktreePath: w.branch !== "main" ? input.cwd : null,
           lastCommitAt: 1794770400,
         },
-        ...(w.ours
+        ...(w.branch !== "main"
           ? [
               {
                 name: "main",
@@ -135,11 +142,11 @@ export default [
       isRepo: true,
       hasPrimaryRemote: true,
       nextCursor: null,
-      totalCount: w.ours ? 2 : 1,
+      totalCount: w.branch !== "main" ? 2 : 1,
     };
   }),
-  rpc(WS_METHODS.reviewGetBranchCommits, (input) => ({
-    commits: workspace(input.cwd).ours
+  rpc(WS_METHODS.reviewGetBranchCommits, (input, context) => ({
+    commits: workspace(input.cwd, context).ours
       ? [
           {
             sha: "a1b2c3d4e5f678901234567890abcdef123456789",
@@ -155,8 +162,8 @@ export default [
       : [],
     truncated: false,
   })),
-  rpc(WS_METHODS.reviewGetDiffPreview, (input) => {
-    const w = workspace(input.cwd);
+  rpc(WS_METHODS.reviewGetDiffPreview, (input, context) => {
+    const w = workspace(input.cwd, context);
     const kind =
       input.file?.sourceKind ?? (input.commitSha ? "commit" : (input.sourceKind ?? "branch-range"));
     let patch = w.change
@@ -200,8 +207,8 @@ export default [
         : [],
     };
   }),
-  rpc(WS_METHODS.reviewGetDiffFileContents, (input) => {
-    const w = workspace(input.cwd);
+  rpc(WS_METHODS.reviewGetDiffFileContents, (input, context) => {
+    const w = workspace(input.cwd, context);
     if (input.newPath.endsWith(".test.ts"))
       return {
         oldContents: "",
