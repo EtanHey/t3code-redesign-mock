@@ -21,8 +21,8 @@ import { MockAssets } from "./assets";
 import { withDefaultContextUsage } from "./defaults";
 import { fillScenarioIndex, scenarioIndexMarkdown } from "./scenarioIndex";
 import { MockEnvironment } from "./environment";
-import { VisitorLog, type LogEntry } from "./persistence";
-import { launchThread, reduceCommand } from "./reducer";
+import { redactCardAnswer, VisitorLog, type CardAnswer, type LogEntry } from "./persistence";
+import { launchThread, linkRecordCommand, recordCard, reduceCommand, secretRecordCommand } from "./reducer";
 import { buildRegistry, type Registry, type Sourced } from "./registry";
 import { runScript } from "./script";
 
@@ -99,6 +99,13 @@ function applyCommand(environment: MockEnvironment, command: OrchestrationV2Comm
   reaction?.react(command as never, { server: environment.server });
 }
 
+function applyCard(environment: MockEnvironment, answer: CardAnswer): void {
+  const server = environment.server;
+  const record =
+    answer.card === "secret" ? secretRecordCommand(server, answer.input) : linkRecordCommand(server, answer.input);
+  if (record) recordCard(server, record);
+}
+
 function replay(environments: ReadonlyMap<EnvironmentId, MockEnvironment>, entries: ReadonlyArray<LogEntry>) {
   const failures: string[] = [];
   let replayed = 0;
@@ -109,6 +116,7 @@ function replay(environments: ReadonlyMap<EnvironmentId, MockEnvironment>, entri
       atTime(entry.at, () => {
         if (entry.kind === "command") applyCommand(environment, entry.command);
         else if (entry.kind === "launch") launchThread(environment.server, entry.input);
+        else if (entry.kind === "card") applyCard(environment, entry.answer);
         else environment.updateSettings(entry.patch);
       });
       replayed += 1;
@@ -210,12 +218,20 @@ function boot(): MockRuntime {
       log.append({ kind: "launch", at: nowMs(), environmentId: environment.environmentId, input });
       return launchThread(server, input);
     });
+    // Secret and link cards are answered over their own RPCs; the server records only the outcome
+    // (an internal record command), so the mock logs the answer redacted and replays it.
+    const answerCard = (answer: CardAnswer) => {
+      log.append({ kind: "card", at: nowMs(), environmentId: environment.environmentId, answer: redactCardAnswer(answer) });
+      applyCard(environment, answer);
+    };
+    const answerSecret = rpc(WS_METHODS.secretsAnswerRequest, (input) => answerCard({ card: "secret", input }));
+    const answerLink = rpc(WS_METHODS.peerLinksAnswerRequest, (input) => answerCard({ card: "link", input }));
     const updateSettings = rpc(WS_METHODS.serverUpdateSettings, (input) => {
       log.append({ kind: "settings", at: nowMs(), environmentId: environment.environmentId, patch: input.patch });
       return environment.updateSettings(input.patch);
     });
     environment.install(
-      handlerMaps(baselineDefinitions(environment, { dispatch, launch, updateSettings }), "redesignMock/kernel/baseline.ts"),
+      handlerMaps(baselineDefinitions(environment, { dispatch, launch, updateSettings, answerSecret, answerLink }), "redesignMock/kernel/baseline.ts"),
       lanesFor(registry),
     );
     // A thread's onOpen script runs against its live run the first time it is opened.

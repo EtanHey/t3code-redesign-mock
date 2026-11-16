@@ -60,13 +60,16 @@ function listFiles(directory: string): string[] {
   });
 }
 
-/** Changes whenever any mock source changes, so a saved visitor state never meets new fixtures. */
+/**
+ * Changes whenever any mock file changes (sources, and the bundled assets fixtures import), so a
+ * saved visitor state never meets new fixtures. README and other notes do not count.
+ */
 function fixtureVersion(): string {
   const hash = NodeCrypto.createHash("sha256");
-  for (const file of listFiles(mockRoot)
-    .filter((path) => /\.(ts|tsx)$/.test(path))
+  for (const file of [...listFiles(mockRoot), ...listFiles(NodePath.join(webRoot, "public/redesign-mock"))]
+    .filter((path) => !/\.md$/i.test(path) && !NodePath.basename(path).startsWith("."))
     .toSorted()) {
-    hash.update(NodePath.relative(mockRoot, file));
+    hash.update(NodePath.relative(webRoot, file));
     hash.update(NodeFS.readFileSync(file));
   }
   return hash.digest("hex").slice(0, 12);
@@ -109,6 +112,49 @@ function seamPlugin(): Plugin {
       if (id === DRIVER + ORIGINAL) return NodeFS.readFileSync(DRIVER, "utf8");
       if (id === LATENCY + ORIGINAL) return NodeFS.readFileSync(LATENCY, "utf8");
       return null;
+    },
+  };
+}
+
+// Upstream's design-system catalog (/design-system) is a dev-build page. Reviewers of a redesign
+// want exactly that page, so the mock turns on the two `import.meta.env.DEV` checks that gate it
+// (the route's 404 and its sidebar nav) and nothing else: every other dev-only tool (the replay
+// host, the gap recorder, the command palette's dev entries) still reads the real DEV flag.
+const DESIGN_SYSTEM_GATES: ReadonlyArray<{ readonly file: string; readonly from: string; readonly to: string }> = [
+  {
+    file: NodePath.join(webRoot, "src/routes/design-system.tsx"),
+    from: "if (!import.meta.env.DEV) throw notFound();",
+    to: "/* redesign-mock: catalog on */",
+  },
+  {
+    file: NodePath.join(webRoot, "src/components/AppSidebarLayout.tsx"),
+    from: "const DesignSystemSidebarNav = import.meta.env.DEV",
+    to: "const DesignSystemSidebarNav = true",
+  },
+];
+
+function designSystemPlugin(command: "build" | "serve"): Plugin {
+  const applied = new Set<string>();
+  return {
+    name: "redesign-mock:design-system",
+    enforce: "pre",
+    transform(code, id) {
+      // The router also loads each route file as split chunks (`?tsr-split=...`); patch whichever
+      // copy holds the check.
+      const gate = DESIGN_SYSTEM_GATES.find((candidate) => candidate.file === id.split("?")[0]);
+      if (!gate || !code.includes(gate.from)) return null;
+      applied.add(gate.from);
+      return { code: code.replace(gate.from, gate.to), map: null };
+    },
+    buildEnd(error) {
+      if (error || command !== "build") return;
+      const missing = DESIGN_SYSTEM_GATES.filter((gate) => !applied.has(gate.from));
+      if (missing.length > 0) {
+        // Her guard moved: fail rather than ship a catalog that 404s or flip a broader switch.
+        throw new Error(
+          `redesign-mock: the design-system gate changed in ${missing.map((gate) => NodePath.relative(webRoot, gate.file)).join(", ")}`,
+        );
+      }
     },
   };
 }
@@ -173,7 +219,7 @@ export function redesignMockConfig(command: "build" | "serve"): UserConfig {
   };
   for (const key of FORCED_EMPTY_ENV) define[`import.meta.env.${key}`] = JSON.stringify("");
   return {
-    plugins: [seamPlugin(), ...htmlPlugin()],
+    plugins: [seamPlugin(), designSystemPlugin(command), ...htmlPlugin()],
     define,
     build: {
       outDir: process.env.MOCK_OUT_DIR?.trim() || "dist-mock",

@@ -6,6 +6,8 @@ import {
   EnvironmentId,
   OrchestrationV2Command,
   OrchestrationV2ThreadLaunchInput,
+  PeerLinkRequestAnswerInput,
+  SecretRequestAnswerInput,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -25,6 +27,17 @@ const LogEntry = Schema.Union([
     environmentId: EnvironmentId,
     input: OrchestrationV2ThreadLaunchInput,
   }),
+  // A secret or link card's answer. Stored redacted (see `redactCardAnswer`): no secret value or
+  // pairing code ever reaches localStorage.
+  Schema.Struct({
+    kind: Schema.Literal("card"),
+    at: Schema.Number,
+    environmentId: EnvironmentId,
+    answer: Schema.Union([
+      Schema.Struct({ card: Schema.Literal("secret"), input: SecretRequestAnswerInput }),
+      Schema.Struct({ card: Schema.Literal("link"), input: PeerLinkRequestAnswerInput }),
+    ]),
+  }),
   Schema.Struct({
     kind: Schema.Literal("settings"),
     at: Schema.Number,
@@ -33,6 +46,20 @@ const LogEntry = Schema.Union([
   }),
 ]);
 export type LogEntry = typeof LogEntry.Type;
+
+export type CardAnswer = Extract<LogEntry, { kind: "card" }>["answer"];
+
+/** Keeps what an answer did and drops what it carried: the card only ever learns the outcome. */
+export function redactCardAnswer(answer: CardAnswer): CardAnswer {
+  if (answer.card === "secret") {
+    return answer.input.answer.type === "save"
+      ? { card: "secret", input: { ...answer.input, answer: { type: "save", secret: "redacted" } } }
+      : answer;
+  }
+  return answer.input.answer.type === "link"
+    ? { card: "link", input: { ...answer.input, answer: { ...answer.input.answer, pairingCode: "redacted" } } }
+    : answer;
+}
 
 const SavedLog = Schema.Struct({
   fixtureVersion: Schema.String,

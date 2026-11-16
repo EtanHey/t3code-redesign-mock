@@ -25,7 +25,11 @@ export function withDefaultContextUsage(projection: OrchestrationV2ThreadProject
   const thread = projection.thread;
   const claude = thread.modelSelection.instanceId === CLAUDE;
   const maxTokens = claude ? 200_000 : 272_000;
-  const share = 0.08 + spread(thread.id) * 0.55 + Math.min(0.2, projection.turnItems.length * 0.006);
+  // A thread with no runs yet (one a visitor just started) holds little more than the system prompt.
+  const share =
+    projection.runs.length === 0
+      ? 0.03 + spread(thread.id) * 0.03
+      : 0.08 + spread(thread.id) * 0.55 + Math.min(0.2, projection.turnItems.length * 0.006);
   const usedTokens = Math.round(maxTokens * Math.min(0.9, share));
   const contextUsage = {
     usedTokens,

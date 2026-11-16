@@ -19,7 +19,7 @@ export default thread({
   id: "e01-provider-failed", project: "errors", title: "Retry the nightly export",
   scenario: { id: "E01", label: "Run failed with provider error", waitForText: "export job" },
   turns: [turn({ at: "18m", status: "failed", user: "Rerun the export job", items: [
-    command({ input: "vp run export", status: "failed", output: "exit 1" }),
+    command({ input: "npm run export", status: "failed", output: "exit 1" }),
     item((base) => ({ ...base, type: "error", status: "failed",
       failure: { class: "provider_error", message: "Upstream 502", code: null, retryable: true } })),
   ] })],
@@ -71,6 +71,17 @@ there with `thread({ environmentId, project: ProjectId.make(id) })`; see K08 (`e
 `server.emit(threadId, [{ type: "turn-item.updated", payload }])` pushes domain events; the shell
 row recomputes. `thread({ script })` replaces the always-working loop for runs started there;
 `onOpen` runs once on first open. Both: `script([think(), exec(), say(), hold()], { loop })`.
+
+Requests resolve as the server projects them: every approval decision (accept, accept for the
+session, accept always, decline, cancel; "Always allow this session" is upstream's toggle that
+changes what Approve sends) resolves the card; decline and cancel cancel its item, and a cancel
+stops the run. An answered question records `questionAnswer` with `questionTextById`; its row shows
+the answer as sent, which is the option's `value` when it has one, else its label (leave `value`
+off for a readable row). Secret and link cards answer over `secrets.answerRequest` and
+`peerLinks.answerRequest` (logged redacted). "Resume thread" shows a "Resumed thread" row, not a
+bubble; Steer sends steer, a plain send queues. A running command row reads "Running <program>"
+(upstream's `commandProgramName`), so use commands a reader knows (`npm`, `git`, `pytest`).
+`/design-system` (her catalog, dev-only upstream) is on in this build.
 
 Unhandled RPCs never hang (silent stream, typed empty result, or a "not available" error). Add
 `?mockdebug` to any URL, or call `window.__MOCK__.unhandled()`, to see what a blank panel waits on.

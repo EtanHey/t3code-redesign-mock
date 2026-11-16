@@ -2,7 +2,9 @@
 // same domain events the real server would emit, so the client updates through its normal path.
 // Commands the kernel does not model are acknowledged and ignored (lanes can react to them).
 import {
+  CommandId,
   MessageId,
+  NodeId,
   RunId,
   ThreadId,
   TurnItemId,
@@ -12,21 +14,32 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2Command,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2Notification,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadLaunchInput,
   type OrchestrationV2ThreadLaunchResult,
   type OrchestrationV2TurnItem,
+  type OrchestrationV2InternalCommand,
+  type PeerLinkRequestAnswerInput,
+  type SecretRequestAnswerInput,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { now } from "./clock";
 import type { CommandOf } from "./definitions";
+import { withDefaultContextUsage } from "./defaults";
 import { emptyProjection } from "./dsl";
 import { alwaysWorking, cancelScript, runScript, type RunScript } from "./script";
 import type { MockServer, ThreadEventInput } from "./server";
 
 type UserMessageItem = Extract<OrchestrationV2TurnItem, { type: "user_message" }>;
 type RequestItem = Extract<OrchestrationV2TurnItem, { type: "user_input_request" | "approval_request" }>;
+/** The server's internal commands that record a secret or link card's outcome. */
+type RecordOf<T extends "secret_request.record" | "link_request.record"> = Extract<
+  OrchestrationV2InternalCommand,
+  { type: T }
+>;
+type NotificationItem = Extract<OrchestrationV2TurnItem, { type: "notification" }>;
 type AppThreadEvent = Extract<ThreadEventInput, { payload: OrchestrationV2AppThread }>["type"];
 
 const LIVE = new Set<OrchestrationV2Run["status"]>(["preparing", "starting", "running", "waiting"]);
@@ -97,6 +110,27 @@ interface MessageInput {
   readonly createdBy?: UserMessageItem["createdBy"];
   readonly creationSource?: UserMessageItem["creationSource"];
   readonly freshContext?: boolean;
+  /** A wake or "Resumed thread" row: the run starts from it, and no bubble shows. */
+  readonly notification?: OrchestrationV2Notification;
+  readonly manualContinuationOfRunId?: RunId;
+}
+
+/** What the real server projects for a message that carries a notification (see
+ * provider-core `notificationTurnItem`): the user row becomes a notification row. */
+function asNotificationItem(item: UserMessageItem, notification: OrchestrationV2Notification): NotificationItem {
+  const {
+    type: _type,
+    messageId: _messageId,
+    inputIntent: _inputIntent,
+    text: _text,
+    attachments: _attachments,
+    createdBy: _createdBy,
+    creationSource: _creationSource,
+    context: _context,
+    freshContext: _freshContext,
+    ...base
+  } = item;
+  return { ...base, type: "notification", ...notification };
 }
 
 function userItem(
@@ -147,6 +181,7 @@ function userItem(
     updatedAt: at,
     createdBy: input.createdBy ?? "user",
     creationSource: input.creationSource ?? "web",
+    ...(input.notification ? { notification: input.notification } : {}),
   };
   return { item, message };
 }
@@ -180,8 +215,14 @@ function newRun(
     contextHandoffId: null,
     ...(status === "queued" ? {} : { workStartedAt: at }),
     ...(input.freshContext ? { freshContext: true } : {}),
+    ...(input.manualContinuationOfRunId ? { manualContinuationOfRunId: input.manualContinuationOfRunId } : {}),
     ...extra,
   };
+}
+
+/** The user row of a run: a message bubble, or the notification row the message carries. */
+function rowOf(item: UserMessageItem, input: MessageInput): OrchestrationV2TurnItem {
+  return input.notification ? asNotificationItem(item, input.notification) : item;
 }
 
 /** Starts a run for a message: the user row appears, the thread goes to working, the script runs. */
@@ -192,7 +233,7 @@ export function startRun(server: MockServer, threadId: ThreadId, input: MessageI
   server.emit(threadId, [
     { type: "run.created", payload: run },
     { type: "message.updated", payload: message },
-    { type: "turn-item.updated", payload: item },
+    { type: "turn-item.updated", payload: rowOf(item, input) },
   ]);
   runScript(server, threadId, run.id, scriptFor(server, threadId, input.text));
   return run.id;
@@ -205,7 +246,7 @@ function queueRun(server: MockServer, threadId: ThreadId, input: MessageInput): 
   server.emit(threadId, [
     { type: "run.created", payload: run },
     { type: "message.updated", payload: message },
-    { type: "turn-item.updated", payload: item },
+    { type: "turn-item.updated", payload: rowOf(item, input) },
   ]);
 }
 
@@ -237,10 +278,15 @@ function startQueued(server: MockServer, threadId: ThreadId, run: OrchestrationV
       },
     },
   ];
-  if (item) {
+  const row =
+    item ??
+    server
+      .projection(threadId)
+      ?.turnItems.find((candidate) => candidate.type === "notification" && candidate.id === `${run.userMessageId}`);
+  if (row) {
     events.push({
       type: "turn-item.updated",
-      payload: { ...item, status: "completed", completedAt: at, updatedAt: at, ordinal: nextOrdinal(server, threadId) },
+      payload: { ...row, status: "completed", completedAt: at, updatedAt: at, ordinal: nextOrdinal(server, threadId) },
     });
   }
   server.emit(threadId, events);
@@ -297,7 +343,43 @@ function startNextQueued(server: MockServer, threadId: ThreadId): void {
   if (next) startQueued(server, threadId, next);
 }
 
-/** Answers or dismisses a request: the card resolves and the run goes back to working. */
+/** `{ answers: [...] }` (a multi-select or attachment answer) is stored as its list, as the server does. */
+function storedAnswers(answers: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(answers).map(([questionId, answer]) => {
+      const nested =
+        answer !== null && typeof answer === "object" && !Array.isArray(answer) && "answers" in answer
+          ? (answer as { readonly answers: unknown }).answers
+          : answer;
+      return [questionId, nested];
+    }),
+  );
+}
+
+function answerText(answer: unknown): string {
+  if (typeof answer === "string") return answer.trim();
+  if (Array.isArray(answer)) return answer.filter((value) => typeof value === "string").join(", ");
+  return "";
+}
+
+/** Puts a run that was waiting on a request back to working, and plays the script's answer part. */
+function resumeAfterRequest(server: MockServer, threadId: ThreadId, runId: RunId | null | undefined): void {
+  const run = runId ? server.projection(threadId)?.runs.find((candidate) => candidate.id === runId) : undefined;
+  if (!run || !LIVE.has(run.status)) return;
+  server.clearRunStatePatch(threadId);
+  if (run.status === "waiting") server.emit(threadId, [{ type: "run.updated", payload: { ...run, status: "running" } }]);
+  const after = scriptFor(server, threadId, "").afterAnswer ?? alwaysWorking("").afterAnswer;
+  if (after) runScript(server, threadId, run.id, after);
+}
+
+/**
+ * Answers a request the way the real server's `runtime-request.respond` does: the request is
+ * resolved with its decision or answers; the card's item completes (accept, accept for the
+ * session, accept always, any other option) or is cancelled (decline, cancel, dismiss); an
+ * answered question records `questionAnswer` with each question's text. Decline feedback becomes a
+ * steer message; a question asked in "message" mode is answered as a message. Then the run goes
+ * back to working, except a cancel on a live request, which ends the turn (it shows as stopped).
+ */
 function resolveRequest(
   server: MockServer,
   threadId: ThreadId,
@@ -306,70 +388,219 @@ function resolveRequest(
   const projection = server.projection(threadId);
   if (!projection) return;
   const at = now();
-  const dismissed = command.type === "thread.user-input.dismiss";
+  const respond = command.type === "runtime-request.respond" ? command : undefined;
+  // Dismissing is the server's respond with "cancel".
+  const decision = respond ? respond.decision : "cancel";
   const request = projection.runtimeRequests.find((candidate) => candidate.id === command.requestId);
+  if (request && request.status !== "pending") return;
   const item = projection.turnItems.find(
     (candidate): candidate is RequestItem =>
       (candidate.type === "user_input_request" || candidate.type === "approval_request") &&
       candidate.requestId === command.requestId,
   );
+  const answers = respond?.answers === undefined ? undefined : storedAnswers(respond.answers);
+  const cancelled = decision === "decline" || decision === "cancel";
   const events: ThreadEventInput[] = [];
+  if (respond?.feedback !== undefined && respond.feedback.trim()) {
+    const messageId = MessageId.make(`approval-feedback:${command.requestId}`);
+    const { item: feedback, message } = userItem(
+      server,
+      threadId,
+      item?.runId ?? null,
+      { messageId, text: respond.feedback, attachments: [], creationSource: "server" },
+      "steer",
+      "completed",
+    );
+    events.push({ type: "message.updated", payload: message }, { type: "turn-item.updated", payload: feedback });
+  }
   if (request) {
     events.push({
       type: "runtime-request.updated",
       payload: {
         ...request,
-        status: dismissed ? "cancelled" : "resolved",
+        status: "resolved",
         resolvedAt: at,
-        ...(!dismissed && command.decision !== undefined ? { decision: command.decision } : {}),
-        ...(!dismissed && command.feedback !== undefined ? { feedback: command.feedback } : {}),
-        ...(!dismissed && command.answers !== undefined ? { answers: command.answers } : {}),
+        ...(decision !== undefined ? { decision } : {}),
+        ...(respond?.feedback !== undefined ? { feedback: respond.feedback } : {}),
+        ...(answers !== undefined ? { answers } : {}),
       },
     });
   }
   if (item) {
-    const declined = !dismissed && (command.decision === "decline" || command.decision === "cancel");
-    const status = dismissed ? ("cancelled" as const) : declined ? ("failed" as const) : ("completed" as const);
-    if (item.type === "user_input_request") {
-      events.push({
-        type: "turn-item.updated",
-        payload: {
-          ...item,
-          status,
-          completedAt: at,
-          updatedAt: at,
-          ...(!dismissed && command.answers !== undefined
-            ? {
-                questionAnswer: {
-                  requestId: command.requestId,
-                  answers: command.answers,
-                  attachmentsByQuestionId: command.attachmentsByQuestionId ?? {},
-                },
-              }
-            : {}),
-        },
-      });
-    } else {
-      events.push({ type: "turn-item.updated", payload: { ...item, status, completedAt: at, updatedAt: at } });
-    }
+    const status = cancelled ? ("cancelled" as const) : ("completed" as const);
+    events.push({
+      type: "turn-item.updated",
+      payload:
+        item.type === "user_input_request" && answers !== undefined
+          ? {
+              ...item,
+              status,
+              completedAt: at,
+              updatedAt: at,
+              questionAnswer: {
+                requestId: command.requestId,
+                answers,
+                attachmentsByQuestionId: respond?.attachmentsByQuestionId ?? {},
+                questionTextById: Object.fromEntries(item.questions.map((question) => [question.id, question.question])),
+              },
+            }
+          : { ...item, status, completedAt: at, updatedAt: at },
+    });
   }
   server.emit(threadId, events);
-  const runId = item?.runId;
-  const run = runId ? server.projection(threadId)?.runs.find((candidate) => candidate.id === runId) : undefined;
-  if (run && LIVE.has(run.status)) {
-    server.clearRunStatePatch(threadId);
-    if (run.status === "waiting") {
-      server.emit(threadId, [{ type: "run.updated", payload: { ...run, status: "running" } }]);
+
+  if (request?.responseCapability.type === "message") {
+    // The provider is not waiting: the answer goes to the agent as a message.
+    if (cancelled || item?.type !== "user_input_request" || answers === undefined) return;
+    const replies = item.questions
+      .map((question) => ({ question, text: answerText(answers[question.id]) }))
+      .filter((entry) => entry.text.length > 0)
+      .map((entry) => `${entry.question.question}\n${entry.text}`);
+    if (replies.length === 0) return;
+    const input: MessageInput = {
+      messageId: MessageId.make(`async-answer:${command.requestId}`),
+      text: replies.join("\n\n"),
+      attachments: [],
+      creationSource: "server",
+    };
+    const active = activeRun(server, threadId);
+    if (active) {
+      const { item: steer, message } = userItem(server, threadId, active.id, input, "steer", "completed");
+      server.emit(threadId, [
+        { type: "message.updated", payload: message },
+        { type: "turn-item.updated", payload: steer },
+      ]);
+    } else {
+      startRun(server, threadId, input);
     }
-    const after = scriptFor(server, threadId, "").afterAnswer ?? alwaysWorking("").afterAnswer;
-    if (after) runScript(server, threadId, run.id, after);
+    return;
+  }
+  if (decision === "cancel" && respond && item?.runId) {
+    interruptRun(server, threadId, item.runId);
+    startNextQueued(server, threadId);
+    return;
+  }
+  resumeAfterRequest(server, threadId, item?.runId);
+}
+
+/** A secret card's answer (`secrets.answerRequest`), recorded as the server records it: status only. */
+export function secretRecordCommand(
+  server: MockServer,
+  input: SecretRequestAnswerInput,
+): RecordOf<"secret_request.record"> | null {
+  const item = server.projection(input.threadId)?.turnItems.find((candidate) => candidate.id === input.turnItemId);
+  if (item?.type !== "secret_request" || item.runId === null || item.secretStatus !== "pending") return null;
+  return {
+    type: "secret_request.record",
+    commandId: CommandId.make(`mock-secret-${input.turnItemId}`),
+    threadId: input.threadId,
+    runId: item.runId,
+    nodeId: item.nodeId ?? NodeId.make(`${item.id}-node`),
+    turnItemId: item.id,
+    label: item.label,
+    reason: item.reason,
+    ...(item.url === undefined ? {} : { url: item.url }),
+    ...(item.placeholder === undefined ? {} : { placeholder: item.placeholder }),
+    ...(item.delivery === undefined ? {} : { delivery: item.delivery }),
+    secretStatus: input.answer.type === "decline" ? "declined" : "saved",
+  };
+}
+
+/** A link card's answer (`peerLinks.answerRequest`). The mock links nothing; it records the outcome. */
+export function linkRecordCommand(
+  server: MockServer,
+  input: PeerLinkRequestAnswerInput,
+): RecordOf<"link_request.record"> | null {
+  const item = server.projection(input.threadId)?.turnItems.find((candidate) => candidate.id === input.turnItemId);
+  if (item?.type !== "link_request" || item.runId === null || item.linkStatus !== "pending") return null;
+  const { answer } = input;
+  const linked =
+    answer.type === "decline"
+      ? null
+      : answer.type === "use-existing"
+        ? {
+            environmentId: answer.environmentId,
+            label: item.label ?? item.hint ?? "the linked machine",
+            access: item.requestedAccess,
+          }
+        : {
+            environmentId: answer.environmentId ?? item.environmentId,
+            label: answer.label ?? hostOf(answer.urls[0]),
+            access: answer.access,
+          };
+  return {
+    type: "link_request.record",
+    commandId: CommandId.make(`mock-link-${input.turnItemId}`),
+    threadId: input.threadId,
+    runId: item.runId,
+    nodeId: item.nodeId ?? NodeId.make(`${item.id}-node`),
+    turnItemId: item.id,
+    reason: item.reason,
+    ...(item.url === undefined ? {} : { url: item.url }),
+    ...(item.environmentId === undefined ? {} : { environmentId: item.environmentId }),
+    ...(item.label === undefined ? {} : { label: item.label }),
+    ...(item.hint === undefined ? {} : { hint: item.hint }),
+    ...(item.requestedAccess === undefined ? {} : { requestedAccess: item.requestedAccess }),
+    linkStatus: linked ? "linked" : "declined",
+    ...(linked?.environmentId === undefined ? {} : { linkedEnvironmentId: linked.environmentId }),
+    ...(linked ? { linkedLabel: linked.label } : {}),
+    ...(linked?.access === undefined ? {} : { linkedAccess: linked.access }),
+  };
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
   }
 }
 
+/** Applies a recorded secret or link answer to its card, then the run carries on. */
+export function recordCard(
+  server: MockServer,
+  command: RecordOf<"secret_request.record"> | RecordOf<"link_request.record">,
+): void {
+  const item = server.projection(command.threadId)?.turnItems.find((candidate) => candidate.id === command.turnItemId);
+  if (!item) return;
+  const at = now();
+  if (command.type === "secret_request.record" && item.type === "secret_request") {
+    server.emit(command.threadId, [
+      {
+        type: "turn-item.updated",
+        payload: { ...item, secretStatus: command.secretStatus, status: "completed", completedAt: at, updatedAt: at },
+      },
+    ]);
+  } else if (command.type === "link_request.record" && item.type === "link_request") {
+    const {
+      type: _type,
+      commandId: _commandId,
+      threadId: _threadId,
+      runId: _runId,
+      nodeId: _nodeId,
+      turnItemId: _turnItemId,
+      ...fields
+    } = command;
+    server.emit(command.threadId, [
+      { type: "turn-item.updated", payload: { ...item, ...fields, status: "completed", completedAt: at, updatedAt: at } },
+    ]);
+  } else {
+    return;
+  }
+  resumeAfterRequest(server, command.threadId, item.runId);
+}
+
+/** The row the real server shows for "Resume thread" (a manual continuation): no bubble. */
+const RESUMED: OrchestrationV2Notification = { source: { kind: "system" }, outcome: "updated", summary: "Resumed thread" };
+
 function messageInput(command: CommandOf<"message.dispatch">): MessageInput {
+  const notification = command.manualContinuationOfRunId !== undefined ? RESUMED : command.notification;
   return {
     messageId: command.messageId,
-    text: command.text,
+    // The server sends a continuation's text as empty; the agent just carries on.
+    text: command.manualContinuationOfRunId !== undefined ? "" : command.text,
+    ...(notification ? { notification } : {}),
+    ...(command.manualContinuationOfRunId ? { manualContinuationOfRunId: command.manualContinuationOfRunId } : {}),
     attachments: command.attachments,
     ...(command.context ? { context: command.context } : {}),
     ...(command.modelSelection ? { modelSelection: command.modelSelection } : {}),
@@ -379,12 +610,29 @@ function messageInput(command: CommandOf<"message.dispatch">): MessageInput {
   };
 }
 
+/**
+ * How the server resolves a send's delivery intent (CommandPolicy `resolveDeliveryIntent`): the
+ * composer's Steer sends `steer`, an interrupt-and-send `restart`, a plain send `auto`. `auto`
+ * queues, as it does for a provider that takes queued messages.
+ */
+function deliveryMode(
+  command: CommandOf<"message.dispatch">,
+  active: OrchestrationV2Run | undefined,
+): CommandOf<"message.dispatch">["dispatchMode"]["type"] {
+  if (command.deliveryIntent === undefined || active === undefined || command.freshContext === true) {
+    return command.dispatchMode.type;
+  }
+  if (command.deliveryIntent === "steer") return "steer_active";
+  if (command.deliveryIntent === "restart") return "restart_active";
+  return "queue_after_active";
+}
+
 function dispatchMessage(server: MockServer, command: CommandOf<"message.dispatch">): void {
   const { threadId } = command;
   if (!server.thread(threadId)) return;
   const input = messageInput(command);
   const active = activeRun(server, threadId);
-  const mode = command.dispatchMode.type;
+  const mode = deliveryMode(command, active);
   if (active === undefined) {
     startRun(server, threadId, input);
     return;
@@ -446,7 +694,8 @@ function createThread(
     lastVisitedAt: at,
     deletedAt: null,
   };
-  server.addThread(emptyProjection(thread));
+  // Planted threads get a context-window figure at boot; a visitor's thread gets one the same way.
+  server.addThread(withDefaultContextUsage(emptyProjection(thread)));
 }
 
 /** A short title from the first words of a message, as the real title generator might. */
