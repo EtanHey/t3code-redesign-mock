@@ -48,7 +48,7 @@ const conversation = thread({
           ],
         })),
         fileChange({ path: "src/notes/NotesSearch.tsx", additions: 6, deletions: 2, diff: DEBOUNCE_DIFF }),
-        command({ input: "vp test src/notes", output: " ✓ src/notes/NotesSearch.test.tsx (4 tests) 212ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n" }),
+        command({ input: "npx vitest run src/notes", output: " ✓ src/notes/NotesSearch.test.tsx (4 tests) 212ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n" }),
         assistant(
           "Done. The input keeps its own value and calls `onQuery` through a debounced callback, so the list filters **180 ms** after the last key instead of on every key.\n\n- `src/notes/NotesSearch.tsx`: `useDebouncedCallback(onQuery, 180)`\n- The four existing search tests still pass.",
         ),
@@ -120,10 +120,10 @@ const working = thread({
         }),
       ),
     exec(
-      { input: "vp test src/orders", output: " ✓ src/orders/tracing.test.ts (3 tests) 418ms\n\n      Tests  3 passed (3)\n" },
+      { input: "npx vitest run src/orders", output: " ✓ src/orders/tracing.test.ts (3 tests) 418ms\n\n      Tests  3 passed (3)\n" },
       "2.5s",
     ),
-    hold({ input: "vp dev --filter orders-api", output: "orders-api listening on :4100\n" }),
+    hold({ input: "npm run dev --workspace orders-api", output: "> orders-api@1.4.0 dev\n> node --watch src/server.ts\n\norders-api listening on :4100\n" }),
   ]),
 });
 
@@ -151,17 +151,14 @@ const waiting = thread({
               {
                 label: "Backfill in batches",
                 description: "Add nullable columns, backfill 10k rows at a time, then switch reads.",
-                value: "batched",
               },
               {
                 label: "Single migration",
                 description: "One transaction during the maintenance window. Simplest, but locks the table.",
-                value: "single",
               },
               {
                 label: "Dual write",
                 description: "Write both shapes for a release, then drop the old column.",
-                value: "dual-write",
               },
             ],
           },

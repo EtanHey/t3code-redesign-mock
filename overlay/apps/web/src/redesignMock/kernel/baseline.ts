@@ -99,6 +99,8 @@ export function baselineDefinitions(
     readonly dispatch: AnyUnaryHandler;
     readonly launch: AnyUnaryHandler;
     readonly updateSettings: AnyUnaryHandler;
+    readonly answerSecret: AnyUnaryHandler;
+    readonly answerLink: AnyUnaryHandler;
   },
 ): MockDefinition[] {
   const server = environment.server;
@@ -106,6 +108,8 @@ export function baselineDefinitions(
     commands.dispatch,
     commands.launch,
     commands.updateSettings,
+    commands.answerSecret,
+    commands.answerLink,
     stream(ORCHESTRATION_V2_WS_METHODS.subscribeShell, () => server.subscribeShell()),
     stream(ORCHESTRATION_V2_WS_METHODS.subscribeThread, (input) => server.subscribeThread(input.threadId)),
     rpc(ORCHESTRATION_V2_WS_METHODS.getThreadProjection, (input) => {

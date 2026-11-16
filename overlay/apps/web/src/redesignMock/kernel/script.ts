@@ -449,6 +449,13 @@ const REPLIES = [
   "Mock preview reply. The work row below stays running on purpose, so you can try queueing, steering and stopping a busy thread.",
 ];
 
+// The row upstream shows for a running command is "Running <program>" (commandProgramName), and
+// finished ones fold into "Ran N commands", so the program has to be one a reader recognises.
+const WATCH = {
+  input: "npm test -- --watch",
+  output: " RERUN  src/app/routes.test.ts\n\n ✓ src/app/routes.test.ts (12 tests) 84ms\n\n Test Files  38 passed (38)\n      Tests  214 passed (214)\n\n Waiting for file changes...\n",
+};
+
 /** The always-working loop: think, run a command, reply, then hold a running row forever. */
 export function alwaysWorking(text: string): RunScript {
   const reply = REPLIES[[...text].reduce((sum, char) => sum + char.charCodeAt(0), 0) % REPLIES.length]!;
@@ -458,12 +465,13 @@ export function alwaysWorking(text: string): RunScript {
       think("Reading the request and the files it mentions."),
       exec({ input: "rg -n \"TODO\" src --max-count 3", output: "src/app/routes.ts:42: // TODO: split the loader\n" }),
       say(reply),
-      hold({ input: "vp test --watch", output: "watching 214 test files\n" }),
+      hold(WATCH),
     ],
     {
       afterAnswer: script([
         think("Picking up from your answer.", "1.2s"),
-        hold({ input: "vp test --watch", output: "watching 214 test files\n" }),
+        exec({ input: "git status --short", output: " M src/app/routes.ts\n M src/app/loader.ts\n" }),
+        hold(WATCH),
       ]),
     },
   );

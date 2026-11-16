@@ -1,7 +1,9 @@
 // Smoke run over a built dist/: opens every registered scenario, fails on an error boundary,
 // an uncaught or console error, any request to another origin, or any WebSocket, and saves a
-// screenshot per scenario to docs.local/shots/<scenario-id>.png. Then one interaction test:
-// send in an idle thread (working), send again (queued), Stop (idle), reload (still there).
+// screenshot per scenario to docs.local/shots/<scenario-id>.png. Then the interaction tests:
+// send in an idle thread (working), send again (queued), Stop (idle), reload (still there); and,
+// at a phone viewport and at desktop width, answer K03 (no empty bubble, the answer reads as its
+// label), Stop and Resume it, and take every approval path on Q01 and Q04, each in a fresh context.
 //
 // Every scenario gets a fresh browser context (no layout, panel or terminal state carried over
 // from the one before), and a few run at once.
@@ -190,6 +192,129 @@ if (runInteraction) {
   });
   await checkPage(live, "interaction");
   await context.close();
+}
+
+// Requests: answering, approving and resuming, at a phone viewport and at desktop width --------
+
+// A user bubble with no text and no image: what a request answer or a resume must never leave.
+const emptyBubbles = (page) =>
+  page.locator("[data-user-message-bubble]").evaluateAll((bubbles) =>
+    bubbles.filter((bubble) => {
+      const body = bubble.querySelector("[data-user-message-body]");
+      return !(body?.textContent ?? "").trim() && !bubble.querySelector("img");
+    }).length,
+  );
+
+const VIEWS = [
+  { name: "phone", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+  { name: "desktop", viewport: { width: 1440, height: 900 } },
+];
+
+async function requestCase(view, name, path, waitFor, body) {
+  const context = await browser.newContext({ ...view, colorScheme: "dark" });
+  const page = await context.newPage();
+  const label = `requests ${view.name}: ${name}`;
+  watch(page, label);
+  const press = (locator) => (view.hasTouch ? locator.tap() : locator.click());
+  try {
+    await page.goto(origin + path);
+    await page.getByText(waitFor, { exact: false }).first().waitFor({ timeout: 20_000 });
+    await page.waitForTimeout(600);
+    await body(page, press);
+    await checkPage(page, label);
+    console.log(`  ✓ ${label}`);
+  } catch (error) {
+    fail(`${label}: ${error.message.split("\n")[0]}`);
+    await page.screenshot({ path: resolve(shots, `requests-${view.name}-${name.replace(/\W+/g, "-")}-failed.png`) }).catch(() => {});
+  }
+  await context.close();
+}
+
+const need = (what, locator) =>
+  locator.waitFor({ timeout: 10_000 }).catch(() => {
+    throw new Error(`expected ${what}`);
+  });
+
+const pendingCount = (page, threadId) =>
+  page.evaluate(
+    (id) => window.__MOCK__.runtime.primary.server.projection(id).runtimeRequests.filter((request) => request.status === "pending").length,
+    threadId,
+  );
+const lastDecision = (page, threadId) =>
+  page.evaluate(
+    (id) => window.__MOCK__.runtime.primary.server.projection(id).runtimeRequests.at(-1)?.decision ?? null,
+    threadId,
+  );
+const runStatus = (page, threadId) =>
+  page.evaluate((id) => window.__MOCK__.runtime.primary.server.projection(id).runs.at(-1)?.status ?? null, threadId);
+
+async function expectResolved(page, threadId, decision, status) {
+  await page.waitForFunction((id) => window.__MOCK__.runtime.primary.server.projection(id).runtimeRequests.every((r) => r.status !== "pending"), threadId, { timeout: 10_000 });
+  await page.getByText("Waiting for approval").first().waitFor({ state: "hidden", timeout: 10_000 });
+  if ((await lastDecision(page, threadId)) !== decision) throw new Error(`decision was ${await lastDecision(page, threadId)}, not ${decision}`);
+  const run = await runStatus(page, threadId);
+  if (!status.includes(run)) throw new Error(`the run is ${run}, not ${status.join(" or ")}`);
+}
+
+if (runInteraction) {
+  console.log("smoke: requests (answer, approve, more options, resume) at phone and desktop width");
+  const K03 = "k03-settings-migration";
+  const Q01 = "q01-approval";
+  const Q04 = "q04-approval";
+  for (const view of VIEWS) {
+    await requestCase(view, "answer K03, then stop and resume", `/redesign-preview/${K03}`, "How should existing rows move", async (page, press) => {
+      if (view.name === "phone") await page.screenshot({ path: resolve(shots, "K03-phone-before.png") });
+      await press(page.getByText("Backfill in batches").first());
+      // The answered row reads the question and the chosen option, not the option's raw value.
+      await need("the run picks up", page.getByText("Picking up from your answer").first());
+      await need("the answered row shows the chosen label", page.locator('text="Backfill in batches" >> visible=true').first());
+      if (await page.getByText("batched", { exact: true }).count()) throw new Error("the answered row shows the raw option value");
+      if ((await emptyBubbles(page)) > 0) throw new Error("an empty user bubble appeared after answering");
+      if (view.name === "phone") await page.screenshot({ path: resolve(shots, "K03-phone-after.png") });
+      await press(page.getByRole("button", { name: "Stop generation" }));
+      await need("the stopped row", page.getByText("You stopped after", { exact: false }).first());
+      // The composer swaps Stop for Resume as the stop settles; a press during the swap is dropped.
+      await page.waitForTimeout(1_500);
+      await press(page.getByRole("button", { name: "Resume thread" }));
+      await need("a Resumed thread row", page.getByText("Resumed thread").first()).catch(async (error) => {
+        const log = await page.evaluate(() => localStorage.getItem("t3code-redesign-mock:visitor-log"));
+        console.log(JSON.parse(log).entries.map((entry) => JSON.stringify(entry.command ?? entry).slice(0, 300)).join("\n"));
+        throw error;
+      });
+      await need("the thread works again", page.getByRole("button", { name: "Stop generation" }));
+      if ((await emptyBubbles(page)) > 0) throw new Error("Resume thread left an empty user bubble");
+    });
+    await requestCase(view, "Q01 always allow this session, then approve", `/redesign-preview/${Q01}`, "Command approval", async (page, press) => {
+      const always = page.getByRole("button", { name: "Always allow this session" });
+      await press(always);
+      // Upstream's control is a toggle: it changes what Approve sends and resolves nothing alone.
+      if ((await always.getAttribute("aria-pressed")) !== "true") throw new Error("the toggle did not turn on");
+      if ((await pendingCount(page, Q01)) !== 1) throw new Error("the toggle alone resolved the request");
+      await press(page.getByRole("button", { name: /^Approve/ }));
+      await expectResolved(page, Q01, "acceptForSession", ["running"]);
+      await page.getByText("Working for", { exact: false }).first().waitFor({ timeout: 10_000 });
+    });
+    await requestCase(view, "Q01 decline", `/redesign-preview/${Q01}`, "Command approval", async (page, press) => {
+      await press(page.getByRole("button", { name: "Decline" }));
+      await expectResolved(page, Q01, "decline", ["running"]);
+    });
+    await requestCase(view, "Q01 more: cancel", `/redesign-preview/${Q01}`, "Command approval", async (page, press) => {
+      await press(page.getByRole("button", { name: "More approval options" }));
+      await press(page.getByRole("menuitem", { name: "Cancel" }));
+      await expectResolved(page, Q01, "cancel", ["interrupted"]);
+      await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "hidden", timeout: 10_000 });
+    });
+    await requestCase(view, "Q04 more: always allow", `/redesign-preview/${Q04}`, "Allow network access", async (page, press) => {
+      await press(page.getByRole("button", { name: "More approval options" }));
+      await press(page.getByRole("menuitem", { name: "Always allow" }));
+      await expectResolved(page, Q04, "acceptAlways", ["running"]);
+    });
+    await requestCase(view, "Q04 allow for this session", `/redesign-preview/${Q04}`, "Allow network access", async (page, press) => {
+      await press(page.getByRole("button", { name: "Allow for this session" }));
+      await press(page.getByRole("button", { name: /^Allow once/ }));
+      await expectResolved(page, Q04, "acceptForSession", ["running"]);
+    });
+  }
 }
 
 await browser.close();
