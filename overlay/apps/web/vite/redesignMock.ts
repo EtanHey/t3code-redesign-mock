@@ -178,6 +178,9 @@ export function redesignMockConfig(command: "build" | "serve"): UserConfig {
     build: {
       outDir: process.env.MOCK_OUT_DIR?.trim() || "dist-mock",
       sourcemap: false,
+      // Mock assets stay real files: the app adds `?revision=` to asset URLs, which a data: URL
+      // cannot carry. Everything else keeps upstream's inlining.
+      assetsInlineLimit: (filePath: string) => (filePath.includes("/redesignMock/") ? false : undefined),
     },
     ...(command === "serve" ? { server: { port: Number(process.env.PORT ?? 5833) } } : {}),
   };

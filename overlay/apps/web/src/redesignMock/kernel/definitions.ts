@@ -109,9 +109,12 @@ export interface AssetContent {
   readonly environmentId?: EnvironmentId;
   /** The served type, such as `"image/png"`, `"text/html"`, `"text/csv"`, `"text/markdown"`. */
   readonly contentType: string;
-  /** Text content (HTML, SVG, CSV, markdown, plain text). Served from a `blob:` URL. */
+  /**
+   * Text content (HTML, CSV, markdown, plain text), served from a `blob:` URL: for attachments,
+   * html_render pages and MCP apps. Not for `path` assets, whose previews add a query string.
+   */
   readonly text?: string;
-  /** A bundled file's URL (`import shot from "./shot.png"`), served as is. */
+  /** A bundled file (`import shot from "./shot.png"`): a real static file, safe everywhere. */
   readonly url?: string;
   /** `"html-render"` adds the bootstrap html_render pages carry (height, theme, links). */
   readonly serveAs?: "html-render";
@@ -235,6 +238,10 @@ export function environment(
 export function asset(spec: AssetSpec): AssetDefinition {
   if ((spec.text === undefined) === (spec.url === undefined)) {
     throw new Error("redesign-mock: asset() takes exactly one of `text` or `url`");
+  }
+  // File previews add `?revision=...` to the URL, which a blob: URL cannot carry.
+  if ("path" in spec && spec.url === undefined) {
+    throw new Error(`redesign-mock: asset({ path: "${spec.path}" }) needs a bundled file as \`url\``);
   }
   return { kind: "asset", ...spec };
 }

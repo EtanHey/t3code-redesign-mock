@@ -5,6 +5,7 @@ import { TurnItemId } from "@t3tools/contracts";
 import { assistant, asset, item, reasoning, thread, turn, workspaceRootOf } from "../../api";
 import latencyChart from "./assets/latency-by-route.png";
 import settingsScreenshot from "./assets/settings-dark.png";
+import settingsDrawing from "./assets/settings-dark.svg?url";
 
 // K04: attachments ------------------------------------------------------------------------------
 
@@ -64,30 +65,13 @@ const withAttachments = thread({
 // Her timeline lists a viewed image as a "Read" row and shows no picture for it; a tool's image
 // output renders inline when the row is expanded. The asset answers both.
 
-const SETTINGS_SHOT = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
-<rect width="640" height="400" fill="#111827"/>
-<rect width="160" height="400" fill="#0b1220"/>
-<g font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" fill="#94a3b8">
-<text x="20" y="40" fill="#e5e7eb" font-weight="600">orbit</text>
-<text x="20" y="84">Overview</text><text x="20" y="112">Deploys</text>
-<rect x="10" y="126" width="140" height="26" rx="6" fill="#1f2937"/><text x="20" y="144" fill="#e5e7eb">Settings</text>
-<text x="20" y="172">Billing</text></g>
-<g font-family="ui-sans-serif,system-ui,sans-serif">
-<text x="190" y="48" font-size="20" font-weight="600" fill="#f9fafb">Settings</text>
-<text x="190" y="92" font-size="13" fill="#9ca3af">Theme</text>
-<rect x="190" y="102" width="200" height="34" rx="6" fill="#1f2937" stroke="#374151"/><text x="202" y="124" font-size="13" fill="#e5e7eb">Dark</text>
-<text x="190" y="170" font-size="13" fill="#9ca3af">Notification email</text>
-<rect x="190" y="180" width="300" height="34" rx="6" fill="#1f2937" stroke="#374151"/><text x="202" y="202" font-size="13" fill="#6b7280">team@example.test</text>
-<rect x="190" y="250" width="120" height="34" rx="6" fill="#1f2937"/><text x="214" y="272" font-size="13" fill="#4b5563">Save changes</text>
-<circle cx="322" cy="267" r="9" fill="none" stroke="#f87171" stroke-width="2"/>
-</g></svg>`;
 
 const viewedImagePath = `${workspaceRootOf("git")}/docs/screenshots/settings-dark.svg`;
 
 const SCREENSHOT_ITEM = TurnItemId.make("k05-settings-screenshot");
 
 const viewed = [
-  asset({ path: "docs/screenshots/settings-dark.svg", contentType: "image/svg+xml", text: SETTINGS_SHOT, width: 640, height: 400 }),
+  asset({ path: "docs/screenshots/settings-dark.svg", contentType: "image/svg+xml", url: settingsDrawing, width: 640, height: 400 }),
   asset({ itemId: SCREENSHOT_ITEM, contentType: "image/png", url: settingsScreenshot, width: 640, height: 400 }),
   thread({
     id: "k05-viewed-screenshot",

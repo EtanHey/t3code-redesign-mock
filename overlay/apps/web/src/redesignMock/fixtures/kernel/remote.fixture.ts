@@ -4,11 +4,12 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import { assistant, command, environment, reasoning, thread, turn } from "../../api";
 
-const BUILD_BOX = EnvironmentId.make("build-box");
-const RENDER_FARM = ProjectId.make("project-build-box-render-farm");
+// The agents lane links its remote task rows to this id and label.
+const BUILD_BOX = EnvironmentId.make("env-build-box");
+const RENDER_FARM = ProjectId.make("project-env-build-box-render-farm");
 
 export default [
-  environment(BUILD_BOX, "Build box", {
+  environment(BUILD_BOX, "build-box", {
     connection: { state: "connected" },
     projects: [{ id: RENDER_FARM, title: "render-farm" }],
   }),

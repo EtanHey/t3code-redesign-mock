@@ -8,7 +8,7 @@ default-exports one definition or an array; import everything from `~/redesignMo
 Duplicates (thread id, scenario id, RPC method, command reaction) stop the boot naming both files.
 Your handler for a method the kernel answers (VCS status, refs, settings...) replaces the kernel's.
 Projects are keys: `start conversation live requests errors agents git sidebar`. The sidebar is a
-recency inbox (pinned first), so set `at` to order rows. Kernel scenario ids are `K00`-`K03`.
+recency inbox (pinned first), so set `at` to order rows. Kernel scenario ids are `K00`-`K08`.
 
 ```ts
 // fixtures/errors/provider-failed.fixture.ts
@@ -48,6 +48,24 @@ export default onCommand("thread.fork", (command, { server }) => {
 });
 ```
 
+`asset(...)` serves real content for the app's own asset requests (no request leaves the page). It
+answers before any handler; one match key each: `attachmentId` (message attachments, html_render
+pages, MCP apps), `path` (workspace and media files, by path suffix) or `itemId` + `index` (a
+tool's image output). Give `url` (a bundled file: `import shot from "./shot.png"`, or `?url` for
+svg/csv; a real static file, safe for `<img>`, frames and the `?revision=` file previews add) or
+`text` (blob URL; attachments and pages only). `serveAs: "html-render"` adds the page bootstrap.
+Examples: `fixtures/kernel/assets.fixture.ts` (K04 attachments, K05 tool image, K06, K07).
+
+```ts
+asset({ attachmentId: "c03-chart", contentType: "image/png", url: chart, width: 720, height: 360 }),
+asset({ attachmentId: "c11-page", contentType: "text/html", text: PAGE, serveAs: "html-render" }),
+```
+
+`environment(id, label, { connection, projects })` adds an environment the app lists everywhere
+(saved in its connection catalog at boot; "Reset demo" clears it). `connection.state`:
+`connected` (default), `reconnecting`, `failed` with `message`, `awaiting-approval`. Threads go
+there with `thread({ environmentId, project: ProjectId.make(id) })`; see K08 (`env-build-box`).
+
 `server.emit(threadId, [{ type: "turn-item.updated", payload }])` pushes domain events; the shell
 row recomputes. `thread({ script })` replaces the always-working loop for runs started there;
 `onOpen` runs once on first open. Both: `script([think(), exec(), say(), hold()], { loop })`.
@@ -57,4 +75,5 @@ Unhandled RPCs never hang (silent stream, typed empty result, or a "not availabl
 
 `scripts/check.sh` typechecks, builds and smokes: every scenario must render with no errors and no
 request to another origin; screenshots land in `docs.local/shots/<scenario-id>.png`.
-`SMOKE_ONLY=E01,E02 node scripts/smoke.mjs` reruns a subset. Content is public: invent everything.
+`SMOKE_ONLY=E01,E02 node scripts/smoke.mjs` reruns a subset; `scripts/update-upstream.sh` moves
+`upstream/` to her newest tip. Content is public: invent everything.

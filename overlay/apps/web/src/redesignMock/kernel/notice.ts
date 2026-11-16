@@ -46,8 +46,27 @@ const ORDER: ReadonlyArray<Spot> = ["footer", "top", "edge"];
 const INTERACTIVE =
   "button, a[href], input, textarea, select, iframe, [role=button], [role=tab], [role=link], [role=textbox], [contenteditable=true], [contenteditable='']";
 
-/** True when the rectangle lies over one of the app's visible controls (not under something else). */
+const overlaps = (box: DOMRect, rect: DOMRect) =>
+  box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
+
+/** The composer's whole card: the outermost box around a text field that holds no other field. */
+function composerBoxes(): DOMRect[] {
+  const boxes: DOMRect[] = [];
+  for (const field of document.querySelectorAll<HTMLElement>("[contenteditable=true], textarea")) {
+    let box: HTMLElement = field;
+    for (let parent = box.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+      if (parent.querySelectorAll("[contenteditable=true], textarea").length > 1) break;
+      if (parent.getBoundingClientRect().height > window.innerHeight * 0.4) break;
+      box = parent;
+    }
+    boxes.push(box.getBoundingClientRect());
+  }
+  return boxes;
+}
+
+/** True when the rectangle lies over the composer or one of the app's visible controls. */
 function coversControl(root: HTMLElement, rect: DOMRect): boolean {
+  if (composerBoxes().some((box) => box.width > 0 && overlaps(box, rect))) return true;
   for (const element of document.querySelectorAll<HTMLElement>(INTERACTIVE)) {
     if (root.contains(element)) continue;
     const box = element.getBoundingClientRect();

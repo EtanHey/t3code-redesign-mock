@@ -195,11 +195,12 @@ export function baselineDefinitions(
     rpc(
       WS_METHODS.assetsCreateUrl,
       (input) =>
-        // Registered content first; anything else gets the guard's placeholder image.
-        environment.assets.createUrl(input.resource) ?? {
+        // Registered assets are answered before any handler (see environment.ts); anything else
+        // gets the guard's placeholder image.
+        ({
           relativeUrl: `/api/assets/mock/${encodeURIComponent(JSON.stringify(input).slice(0, 120))}`,
           expiresAt: Date.parse(iso(now())) + 3_600_000,
-        },
+        }),
     ),
   ];
 }
