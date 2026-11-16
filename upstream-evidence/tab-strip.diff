@@ -1,0 +1,53 @@
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index df700c8d..6bfa0d70 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -6627,8 +6627,11 @@ body {
+         mask: linear-gradient(to right, transparent, #000);
+       }
+ 
++      /* A 1px layer scaled ~300x overshot the tab by several px at some fractional
++         zooms; 8px scaled by width / 8 does not. Keep in step with
++         PANE_JOIN_MIDDLE_PX (PaneTabs.tsx). */
+       & [data-jm] {
+-        width: 1px;
++        width: 8px;
+         height: 100%;
+         transform-origin: 0 0;
+         translate: calc(var(--jx) + var(--r)) 0;
+@@ -6643,6 +6646,12 @@ body {
+         background: var(--pane-join-rim) 0 0 / var(--pane-join-rim-size) no-repeat;
+       }
+ 
++      /* Fill 1px under the foot: at fractional zoom the shape and the pane below meet
++         on a row each only half covers, and a dark hairline shows through. */
++      & :is([data-jm], [data-jf], [data-je]) {
++        box-shadow: 0 1px 0 var(--pane-join-fill);
++      }
++
+       & :is([data-jr], [data-jer], [data-jt]),
+       & [data-jm]::after {
+         transition: opacity var(--panel-animation-duration, 150ms) ease-out;
+diff --git a/apps/web/src/layout/PaneTabs.tsx b/apps/web/src/layout/PaneTabs.tsx
+index f2cea683..9cef334d 100644
+--- a/apps/web/src/layout/PaneTabs.tsx
++++ b/apps/web/src/layout/PaneTabs.tsx
+@@ -136,6 +136,8 @@ function schedulePlacement(strip: HTMLElement, motionMs: number): void {
+ const PANE_JOIN_RADIUS_PX = 10;
+ const PANE_JOIN_EAR_PX = 10;
+ const PANE_JOIN_TAIL_PX = 36;
++/** The middle piece's own width (index.css, [data-jm]); its scale is the middle's width over this. */
++const PANE_JOIN_MIDDLE_PX = 8;
+ /** The strip's edge fade (index.css), which the revealed tab's ears stay clear of. */
+ const PANE_STRIP_FADE_PX = 24;
+ 
+@@ -323,7 +325,8 @@ function moveJoin(
+   if (entry.slide && was?.tabId === to.tabId && was.x === to.x && was.w === to.w) return;
+   entry.shown = to;
+   join.hidden = false;
+-  const middle = (width: number) => Math.max(0, width - 2 * PANE_JOIN_RADIUS_PX);
++  const middle = (width: number) =>
++    Math.max(0, width - 2 * PANE_JOIN_RADIUS_PX) / PANE_JOIN_MIDDLE_PX;
+   join.style.setProperty("--jx", `${to.x}px`);
+   join.style.setProperty("--jw", `${to.w}px`);
+   join.style.setProperty("--jm", String(middle(to.w)));

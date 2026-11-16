@@ -1,0 +1,13 @@
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index df700c8d..8ae02c96 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -1441,7 +1441,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
+    current item of a menu, palette or nav, and the quieter current row of a
+    picker. */
+ @utility surface-ghost-hover {
+-  background: var(--ghost-hover-fill);
++  background: var(--ghost-hover-fill) border-box;
+ }
+ @utility surface-selected {
+   background: var(--selected-fill);
