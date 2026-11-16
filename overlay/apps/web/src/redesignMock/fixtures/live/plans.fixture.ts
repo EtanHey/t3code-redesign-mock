@@ -252,8 +252,8 @@ const THREAD_L07B = "l07-plan-ready";
 const planReady = thread({
   id: THREAD_L07B,
   project: "live",
-  title: "Plan: ready, reply to approve it",
-  scenario: { id: "L07b", label: "Plan ready, waiting for your reply", waitForText: "signed tokens" },
+  title: "Plan card: copy, download or save a finished plan",
+  scenario: { id: "L07b", label: "Finished plan card with its actions", waitForText: "signed tokens" },
   interactionMode: "plan",
   turns: [
     turn({
@@ -263,7 +263,7 @@ const planReady = thread({
       items: [
         reasoning("Reading how sessions are stored today before proposing anything."),
         proposedPlan(THREAD_L07B, PLAN_MARKDOWN, false),
-        assistant("The plan is ready. Reply \"go ahead\" and I will start with step 1, or tell me what to change first."),
+        assistant("The plan is above. This app has no approve button: reply \"go ahead\" to start with step 1, or tell me what to change. The ... menu on the plan card copies it, downloads it as markdown or saves it to a file."),
       ],
     }),
   ],

@@ -15,12 +15,12 @@ import { hold } from "../../api";
 type ApprovalOptions = Parameters<typeof approval>[0];
 
 const batchOptions: OrchestrationV2UserInputQuestion["options"] = [
-  { label: "Small batches", description: "Process a few records at a time.", value: "small", preview: "```ts\nbatchSize = 100\n```" },
-  { label: "Large batches", description: "Finish sooner with more load.", value: "large", preview: "```ts\nbatchSize = 1000\n```" },
+  { label: "Small batches", description: "Process a few records at a time.", preview: "```ts\nbatchSize = 100\n```" },
+  { label: "Large batches", description: "Finish sooner with more load.", preview: "```ts\nbatchSize = 1000\n```" },
 ];
 const checkOptions: OrchestrationV2UserInputQuestion["options"] = [
-  { label: "Unit tests", description: "Run the focused test suite.", value: "unit" },
-  { label: "Schema checks", description: "Verify the migrated columns.", value: "schema" },
+  { label: "Unit tests", description: "Run the focused test suite." },
+  { label: "Schema checks", description: "Verify the migrated columns." },
 ];
 const questionSpec = (id: string, text: string): OrchestrationV2UserInputQuestion => ({
   id,
@@ -190,11 +190,11 @@ export default [
   ),
   approvalThread(
     "Q04",
-    "Approval: permission choices",
+    "Approval: permission choices (Always allow is under More)",
     {
       user: "Check the dependencies for known security problems.",
       think: "The audit needs the advisory database, which means reaching the network.",
-      say: "The check needs network access. You can allow it once, allow it for this session with the button on the left, or open More to always allow it.",
+      say: "The check needs network access. Below you can allow it once or for this session. **Always allow** is not in the first row: open **More** to find it, with its warning.",
     },
     {
       requestKind: "permission",

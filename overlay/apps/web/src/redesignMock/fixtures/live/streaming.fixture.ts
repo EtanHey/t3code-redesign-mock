@@ -5,7 +5,6 @@ import {
   assistant,
   command,
   exec,
-  fileChange,
   hold,
   reasoning,
   say,
@@ -16,7 +15,7 @@ import {
   thread,
   turn,
 } from "../../api";
-import { continueStreaming, finishedCommand, printingCommand, streamParagraphs } from "./live-kit";
+import { continueStreaming, finishedCommand, openRows, printingCommand, streamParagraphs } from "./live-kit";
 
 const CACHE_REPLY =
   "The cache keys were built from the raw query string, so `?page=2&sort=name` and `?sort=name&page=2` landed in two different entries. I'm sorting the parameters before hashing them, which makes both URLs share one entry. After that I'll add a test that sends the same request with the parameters in a different order and checks that the second call is a cache hit.";
@@ -135,6 +134,11 @@ const TEST_LINES = [
   "      Tests  64 passed (64)",
 ];
 
+openRows("l03-command-live-output", { items: [2, 3, 4] });
+openRows("l03-command-succeeded", { items: [3] });
+openRows("l03-command-nonzero", { items: [3] });
+openRows("l03-command-failed-tests", { items: [3] });
+
 const liveOutput = thread({
   id: "l03-command-live-output",
   project: "live",
@@ -207,11 +211,8 @@ function stepAppend(lines: ReadonlyArray<string>, upTo: number, after: Span) {
   });
 }
 
-// L03b-d keep a turn open after the command ends, so its row stays on screen with the ending
-// that matters: exit 0, a non-zero exit, or failing tests. The agent carries on from there.
-function afterCommand(lines: ReadonlyArray<string>) {
-  return script([], { loop: streamParagraphs("assistant_message", lines, { after: "6s" }) });
-}
+// L03b-d keep the turn open after the command ends and end the thread on its row, expanded, with
+// the exit state that matters: exit 0, a non-zero exit, or failing tests.
 
 const commandSucceeded = thread({
   id: "l03-command-succeeded",
@@ -226,9 +227,7 @@ const commandSucceeded = thread({
       user: "Is lint clean? Then check the formatting too.",
       items: [
         reasoning("Lint first, then the formatter. Both are quick on this repo."),
-        assistant("Running `eslint .` now. It exits 0 when nothing is wrong; click its row to see the output.", {
-          phase: "commentary",
-        }),
+        assistant("Running `eslint .` now.", { phase: "commentary" }),
         finishedCommand({
           input: "eslint .",
           output: "Checked 186 files in 412ms.\nFound 0 warnings and 0 errors.\n",
@@ -253,9 +252,7 @@ const commandFailed = thread({
       user: "Build the release bundle.",
       items: [
         reasoning("The release build uses the production config, so I'll build with that mode."),
-        assistant("Building with `vite build --mode release`. A failed build turns its row red; click it for the full output.", {
-          phase: "commentary",
-        }),
+        assistant("Building with `vite build --mode release`.", { phase: "commentary" }),
         finishedCommand({
           input: "vite build --mode release",
           status: "failed",
@@ -277,34 +274,24 @@ const commandTests = thread({
   turns: [
     turn({
       at: "2m",
+      took: "75s",
       status: "running",
       user: "Run the shipping tests.",
       items: [
-        command({
+        reasoning("The shipping tests live in one folder, so I'll run just that."),
+        assistant("Running `vitest run src/shipping`.", { phase: "commentary" }),
+        finishedCommand({
           input: "vitest run src/shipping",
           status: "failed",
           exitCode: 1,
           output:
             " ✓ src/shipping/labels.test.ts (5 tests) 44ms\n ❯ src/shipping/rates.test.ts (7 tests | 3 failed) 71ms\n   × rates > applies the weekend surcharge\n   × rates > rounds to whole cents\n   × rates > falls back to the flat rate\n\n Test Files  1 failed | 1 passed (2)\n      Tests  3 failed | 9 passed (12)\n",
+          after: "11s",
           extra: { failedTestCount: 3, outputIndicatesFailure: true },
         }),
-        assistant("3 tests fail in `rates.test.ts`. I'm fixing the rounding and the flat-rate fallback in `quote`.", {
-          phase: "commentary",
-        }),
-        fileChange({
-          path: "src/shipping/rates.ts",
-          additions: 4,
-          deletions: 1,
-          diff: "@@ -22,7 +22,10 @@ export function quote(weightKg: number, zone: Zone): Cents {\n-  return Math.round(base * surcharge);\n+  const total = base * surcharge;\n+  return zone.flatRate !== null && weightKg > zone.maxKg\n+    ? zone.flatRate\n+    : Math.round(total);\n",
-        }),
-        command({ input: "vitest run src/shipping", status: "running", output: " RUN  v2.4.1\n" }),
       ],
     }),
   ],
-  onOpen: afterCommand([
-    "Two of the three now pass. The weekend surcharge test still fails because it expects the surcharge to apply before rounding.",
-    "All 12 shipping tests pass now.",
-  ]),
 });
 
 export default [streamingText, reasoningStream, liveOutput, commandSucceeded, commandFailed, commandTests];

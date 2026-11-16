@@ -1,5 +1,5 @@
 // L08-L12: how a thread reads before it works, while it works, while it waits and while it stops:
-// preparing, starting, queued; a running timer; waiting on another thread; a background command
+// preparing, starting; a running timer; waiting on another thread; a background command
 // and monitor holding completion; Stop requested, the agent not answering, and stopped.
 import { ProviderDriverKind, ProviderThreadId, type OrchestrationV2ProviderThread } from "@t3tools/contracts";
 
@@ -30,7 +30,7 @@ const EARLIER: TurnSpec = turn({
 });
 
 // The app's own words: a thread that is still creating its workspace reads "Setting up", one
-// whose agent has not opened yet reads "Starting", one behind another message reads "Queued".
+// whose agent has not opened yet reads "Starting", a message sent behind a running turn waits in the composer tray (S06).
 const preparing = thread({
   id: "l08-preparing",
   project: "live",
@@ -58,35 +58,6 @@ const starting = thread({
       ],
     }),
     turn({ at: "15s", status: "starting", user: "Add an audit log entry when a job is retried.", items: [] }),
-  ],
-});
-
-const queued = thread({
-  id: "l08-queued",
-  project: "live",
-  title: "Queued: waiting behind another run",
-  scenario: { id: "L08c", label: "Thread queued", waitForText: "Group the failed jobs" },
-  turns: [
-    turn({
-      at: "12m",
-      took: "70s",
-      user: "Rename the `failedAt` column to `lastFailedAt` in the jobs table.",
-      items: [
-        command({ input: "rg -l \"failedAt\" src migrations", output: "src/jobs/store.ts\nsrc/jobs/report.ts\nmigrations/0042_jobs.sql\n" }),
-        assistant("Renamed in the store, the report query and a new migration. The column rename is reversible."),
-      ],
-    }),
-    turn({
-      at: "30s",
-      status: "queued",
-      user: {
-        text: "Group the failed jobs by queue name on the dashboard.",
-        inputIntent: "queued_turn",
-        extra: { status: "pending" },
-      },
-      items: [],
-      run: { queuePosition: 1 },
-    }),
   ],
 });
 
@@ -315,4 +286,4 @@ const stopped = thread({
   ],
 });
 
-export default [preparing, starting, queued, working, waitingOnThread, monitoring, stopping, unresponsive, stopped];
+export default [preparing, starting, working, waitingOnThread, monitoring, stopping, unresponsive, stopped];

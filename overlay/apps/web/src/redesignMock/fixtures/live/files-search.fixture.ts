@@ -1,7 +1,10 @@
 // L04 and L05: file-change tool rows (single file, several files, rename, new file, deleted
 // file, each with a diff) and file and web search rows with results.
 import { assistant, command, fileChange, item, reasoning, script, thread, turn } from "../../api";
-import { streamParagraphs } from "./live-kit";
+import { openRows, streamParagraphs } from "./live-kit";
+
+openRows("l04-file-changes", { runs: [1], items: [1, 2, 5, 6, 7, 8, 9, 10, 11] });
+openRows("l05-file-and-web-search", { items: [1, 2, 3, 5] });
 
 const EDIT_DIFF = `@@ -8,11 +8,15 @@ export async function listShipments(db: Database, filter: ShipmentFilter) {
 -  const rows = await db.query("select * from shipments");

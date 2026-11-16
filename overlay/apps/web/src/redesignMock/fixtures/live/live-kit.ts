@@ -4,6 +4,7 @@
 import { MessageId, type OrchestrationV2TurnItem, type TurnItemId } from "@t3tools/contracts";
 
 import { item, now, plus, step, type ItemSpec, type RunHandle, type ScriptStep, type Span } from "../../api";
+import { openDemoWork } from "../conv/open-state";
 
 type StreamedType = "assistant_message" | "reasoning";
 
@@ -244,9 +245,11 @@ export function finishedCommand(options: {
   readonly exitCode: number;
   readonly status?: "completed" | "failed";
   readonly after?: Span;
+  readonly extra?: Partial<Extract<OrchestrationV2TurnItem, { type: "command_execution" }>>;
 }): ItemSpec {
   return item((base) => ({
     ...base,
+    ...options.extra,
     status: options.status ?? (options.exitCode === 0 ? "completed" : "failed"),
     completedAt: plus(base.startedAt, options.after ?? "5s"),
     type: "command_execution",
@@ -271,5 +274,17 @@ export function finishLiveCommand(output: string, after: Span = "4s", exitCode =
         ? { ...current, output, exitCode, status: exitCode === 0 ? "completed" : "failed" }
         : current,
     );
+  });
+}
+
+/**
+ * Opens a planted thread with its work rows unfolded: the run folds in `runs` and the tool groups
+ * and rows whose ordinals are in `items` (a thread's items are numbered `<id>-item-<n>`, the user
+ * message first). The live run's tail is one "Running <program>" row until it is opened.
+ */
+export function openRows(threadId: string, options: { readonly items: ReadonlyArray<number>; readonly runs?: ReadonlyArray<number> }): void {
+  openDemoWork(threadId, {
+    itemIds: options.items.map((ordinal) => `${threadId}-item-${ordinal}`),
+    runNumbers: [...(options.runs ?? [])],
   });
 }

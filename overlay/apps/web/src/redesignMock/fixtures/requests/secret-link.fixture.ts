@@ -9,14 +9,14 @@ type SecretItem = Extract<OrchestrationV2TurnItem, { type: "secret_request" }>;
 type LinkItem = Extract<OrchestrationV2TurnItem, { type: "link_request" }>;
 
 const SECRET_REASON =
-  "I need a test-mode Stripe key to run the checkout tests against the sandbox. Create one at https://dashboard.example.com/test/apikeys and paste it here.";
+  "I need a test-mode payments key to run the checkout tests against the sandbox. Create one at https://dashboard.example.com/test/apikeys and paste it here.";
 
 function secretCard(secretStatus: SecretItem["secretStatus"]): ItemSpec {
   return item((base) => ({
     ...base,
     ...(secretStatus === "pending" ? { status: "waiting" as const, completedAt: null } : {}),
     type: "secret_request",
-    label: "STRIPE_TEST_KEY",
+    label: "PAYMENTS_TEST_KEY",
     reason: SECRET_REASON,
     placeholder: "sk_test_...",
     delivery: "file",
@@ -24,12 +24,12 @@ function secretCard(secretStatus: SecretItem["secretStatus"]): ItemSpec {
   }));
 }
 
-const SECRET_USER = "Run the checkout tests against the Stripe sandbox.";
+const SECRET_USER = "Run the checkout tests against the payments sandbox.";
 const secretLead = [
-  reasoning("The checkout tests call the Stripe sandbox, which needs an API key I do not have."),
+  reasoning("The checkout tests call the payments sandbox, which needs an API key I do not have."),
   command({
-    input: "rg -n \"STRIPE_TEST_KEY\" src .env.example",
-    output: ".env.example:4:STRIPE_TEST_KEY=\nsrc/payments/client.ts:6:  apiKey: process.env.STRIPE_TEST_KEY,\n",
+    input: "rg -n \"PAYMENTS_TEST_KEY\" src .env.example",
+    output: ".env.example:4:PAYMENTS_TEST_KEY=\nsrc/payments/client.ts:6:  apiKey: process.env.PAYMENTS_TEST_KEY,\n",
   }),
 ];
 
@@ -41,18 +41,30 @@ function secretThread(
   after: string | null,
 ) {
   const pending = secretStatus === "pending";
+  const cancelled = secretStatus === "cancelled";
   return thread({
     id: `q12-secret-${suffix}`,
     project: "requests",
     title,
-    scenario: { id, label: title, waitForText: pending ? "STRIPE_TEST_KEY" : after ?? "STRIPE_TEST_KEY" },
+    scenario: { id, label: title, waitForText: pending ? "PAYMENTS_TEST_KEY" : after ?? "PAYMENTS_TEST_KEY" },
     turns: [
       turn({
         at: "6m",
         took: "3m",
-        status: pending ? "waiting" : "completed",
+        status: pending ? "waiting" : cancelled ? "interrupted" : "completed",
         user: SECRET_USER,
-        items: [...secretLead, secretCard(secretStatus), ...(after ? [assistant(after)] : [])],
+        items: [
+          ...secretLead,
+          secretCard(secretStatus),
+          ...(after ? [assistant(after)] : []),
+          // Stopping the run while the request is open ends the request with it.
+          ...(cancelled
+            ? [
+                item((base) => ({ ...base, type: "run_interrupt_request", message: "Stop requested" })),
+                item((base) => ({ ...base, type: "run_interrupt_result", message: "Stopped by you" })),
+              ]
+            : []),
+        ],
       }),
     ],
   });

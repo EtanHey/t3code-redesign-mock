@@ -3,6 +3,7 @@
 import { TurnItemId } from "@t3tools/contracts";
 
 import { assistant, asset, item, reasoning, thread, turn, workspaceRootOf } from "../../api";
+import { openDemoWork } from "../conv/open-state";
 import latencyChart from "./assets/latency-by-route.png";
 import settingsScreenshot from "./assets/settings-dark.png";
 import settingsDrawing from "./assets/settings-dark.svg?url";
@@ -69,6 +70,9 @@ const withAttachments = thread({
 const viewedImagePath = `${workspaceRootOf("git")}/docs/screenshots/settings-dark.svg`;
 
 const SCREENSHOT_ITEM = TurnItemId.make("k05-settings-screenshot");
+
+// Opens the run's fold, its tool group and the screenshot row, so the image shows on open.
+openDemoWork("k05-viewed-screenshot", { itemIds: ["k05-viewed-screenshot-item-1", "k05-viewed-screenshot-item-2", SCREENSHOT_ITEM] });
 
 const viewed = [
   asset({ path: "docs/screenshots/settings-dark.svg", contentType: "image/svg+xml", url: settingsDrawing, width: 640, height: 400 }),
