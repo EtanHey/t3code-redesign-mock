@@ -18,7 +18,7 @@ import {
   turn,
   type TurnSpec,
 } from "../../api";
-import { streamParagraphs } from "./live-kit";
+import { finishLiveCommand, streamParagraphs } from "./live-kit";
 
 // L08 -------------------------------------------------------------------------------------------
 
@@ -29,11 +29,13 @@ const EARLIER: TurnSpec = turn({
   items: [assistant("It marks jobs the worker may run again after a failure. Jobs that failed validation are never retryable.")],
 });
 
+// The app's own words: a thread that is still creating its workspace reads "Setting up", one
+// whose agent has not opened yet reads "Starting", one behind another message reads "Queued".
 const preparing = thread({
   id: "l08-preparing",
   project: "live",
-  title: "Preparing: setting up the workspace",
-  scenario: { id: "L08", label: "Thread preparing", waitForText: "nightly digest" },
+  title: "Setting up: creating the workspace",
+  scenario: { id: "L08", label: "Thread preparing (Setting up)", waitForText: "nightly digest" },
   turns: [
     EARLIER,
     turn({ at: "20s", status: "preparing", user: "Add a nightly digest email for failed jobs.", items: [] }),
@@ -43,10 +45,18 @@ const preparing = thread({
 const starting = thread({
   id: "l08-starting",
   project: "live",
-  title: "Starting: the agent is connecting",
+  title: "Starting: waiting for the agent to open",
   scenario: { id: "L08b", label: "Thread starting", waitForText: "audit log" },
   turns: [
-    EARLIER,
+    turn({
+      at: "25m",
+      took: "45s",
+      user: "Which queue handles the retries?",
+      items: [
+        command({ input: "rg -n \"retryQueue\" src", output: "src/jobs/worker.ts:58:  const retryQueue = queues.get(\"retries\");\n" }),
+        assistant("Retries go through the `retries` queue, which `worker.ts` creates at startup."),
+      ],
+    }),
     turn({ at: "15s", status: "starting", user: "Add an audit log entry when a job is retried.", items: [] }),
   ],
 });
@@ -54,10 +64,18 @@ const starting = thread({
 const queued = thread({
   id: "l08-queued",
   project: "live",
-  title: "Queued: waiting for the agent to take it",
-  scenario: { id: "L08c", label: "Thread queued", waitForText: "Queued" },
+  title: "Queued: waiting behind another run",
+  scenario: { id: "L08c", label: "Thread queued", waitForText: "Group the failed jobs" },
   turns: [
-    EARLIER,
+    turn({
+      at: "12m",
+      took: "70s",
+      user: "Rename the `failedAt` column to `lastFailedAt` in the jobs table.",
+      items: [
+        command({ input: "rg -l \"failedAt\" src migrations", output: "src/jobs/store.ts\nsrc/jobs/report.ts\nmigrations/0042_jobs.sql\n" }),
+        assistant("Renamed in the store, the report query and a new migration. The column rename is reversible."),
+      ],
+    }),
     turn({
       at: "30s",
       status: "queued",
@@ -92,7 +110,7 @@ const working = thread({
     turn({
       at: "7m",
       status: "running",
-      took: "7m",
+      took: "6m 30s",
       user: "The list endpoint needs real pagination. Please add it end to end.",
       items: [
         reasoning("Looking at how the list endpoint builds its response."),
@@ -106,18 +124,12 @@ const working = thread({
           diffStr: "@@ -6,5 +6,10 @@ export function paginate<T>(rows: T[], size: number) {\n-  return { rows: rows.slice(0, size) };\n+  const page = rows.slice(0, size);\n+  return {\n+    rows: page,\n+    nextCursor: rows.length > size ? encodeCursor(page.at(-1)) : null,\n+  };\n }\n",
           changes: [{ operation: "update", path: "src/lib/page.ts" }],
         })),
-        command({ input: "vp test src/lib/page.test.ts", status: "running", output: " RUN  v2.4.1\n" }),
+        command({ input: "vitest run src/lib/page.test.ts", status: "running", output: " RUN  v2.4.1\n" }),
       ],
     }),
   ],
   onOpen: script(
-    [
-      ...exec(
-        { input: "vp test src/lib/page.test.ts", output: " ✓ src/lib/page.test.ts (7 tests) 24ms\n" },
-        "1.5s",
-        "1s",
-      ),
-    ],
+    [finishLiveCommand(" ✓ src/lib/page.test.ts (7 tests) 24ms\n", "6s")],
     {
       loop: [
         ...streamParagraphs("assistant_message", WORKING_NOTES, { after: "7s" }),
@@ -142,10 +154,15 @@ const waitingOnThread = thread({
   turns: [
     turn({
       at: "9m",
+      took: "8m",
       status: "running",
       user: "Start the pagination work in its own thread and tell me when it's done.",
       items: [
         reasoning("The pagination thread owns the code; I only need to wait for its result."),
+        assistant(
+          "I started “Working: timer running (started 7 minutes ago)” in its own thread. I'm waiting for it to finish before I report back.",
+          { phase: "commentary" },
+        ),
         item((base) => ({
           ...base,
           type: "dynamic_tool",
@@ -165,7 +182,7 @@ const L11_ID = "l11-background-monitor";
 const devServerTask = {
   taskId: `${L11_ID}-item-2`,
   kind: "command" as const,
-  description: "vp dev --filter harbor-api",
+  description: "pnpm --filter harbor-api dev",
 };
 const monitorTask = {
   taskId: `${L11_ID}-item-3`,
@@ -211,7 +228,7 @@ const monitoring = thread({
       items: [
         reasoning("The server has to stay up, so it runs in the background; a monitor reports error lines."),
         command({
-          input: "vp dev --filter harbor-api",
+          input: "pnpm --filter harbor-api dev",
           status: "running",
           output: "harbor-api listening on :4100\nGET /health 200 3ms\n",
           extra: { completionWake: "always" },
@@ -248,8 +265,7 @@ function interruptItems(unresponsiveAfter: string | null) {
       completedAt: null,
       type: "run_interrupt_request",
       message: "Stop requested",
-      startedAt: ago("45s"),
-      ...(unresponsiveAfter === null ? {} : { unresponsiveAt: plus(ago("45s"), unresponsiveAfter) }),
+      ...(unresponsiveAfter === null ? {} : { unresponsiveAt: plus(base.startedAt, unresponsiveAfter) }),
     })),
   ];
 }
@@ -259,7 +275,7 @@ const stopping = thread({
   project: "live",
   title: "Stop: requested, agent is winding down",
   scenario: { id: "L12", label: "Interrupt requested", waitForText: "Stopping" },
-  turns: [turn({ at: "3m", status: "running", user: STOP_USER, items: interruptItems(null) })],
+  turns: [turn({ at: "150s", took: "204s", status: "running", user: STOP_USER, items: interruptItems(null) })],
 });
 
 const unresponsive = thread({
@@ -267,7 +283,7 @@ const unresponsive = thread({
   project: "live",
   title: "Stop: agent not responding, Force stop offered",
   scenario: { id: "L12b", label: "Interrupt unresponsive, Force stop", waitForText: "Force stop" },
-  turns: [turn({ at: "4m", status: "running", user: STOP_USER, items: interruptItems("15s") })],
+  turns: [turn({ at: "210s", took: "325s", status: "running", user: STOP_USER, items: interruptItems("15s") })],
 });
 
 const stopped = thread({

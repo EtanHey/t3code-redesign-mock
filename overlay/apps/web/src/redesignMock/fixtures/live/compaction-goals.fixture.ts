@@ -32,7 +32,7 @@ const compactionRunning = thread({
       status: "running",
       user: "Keep going with the importer, there's a lot of history here.",
       items: [
-        command({ input: "vp test src/importer", output: " ✓ src/importer/stream.test.ts (9 tests) 77ms\n" }),
+        command({ input: "vitest run src/importer", output: " ✓ src/importer/stream.test.ts (9 tests) 77ms\n" }),
         item((base) => ({
           ...base,
           status: "running" as const,
@@ -127,7 +127,7 @@ function goalThread(options: {
         items: options.working
           ? [
               reasoning("Measuring coverage before choosing which files to test first."),
-              command({ input: "vp test --coverage src/pricing", output: "pricing/tiers.ts   71.4%\npricing/discounts.ts   64.0%\n" }),
+              command({ input: "vitest run --coverage src/pricing", output: "pricing/tiers.ts   71.4%\npricing/discounts.ts   64.0%\n" }),
               assistant(options.reply, { phase: "commentary", streaming: false }),
             ]
           : [assistant(options.reply)],

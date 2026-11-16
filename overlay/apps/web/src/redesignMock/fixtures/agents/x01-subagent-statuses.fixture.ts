@@ -29,7 +29,7 @@ const specs: ReadonlyArray<SubagentSpec> = [
     key: "tests",
     parentId: PARENT,
     title: "Run the sync test suite",
-    prompt: "Run `vp test src/sync` and report the failures.",
+    prompt: "Run `vitest run src/sync` and report the failures.",
     status: "failed",
     result: "2 of 18 tests failed: the clock-skew case and the offline queue replay. Timed out waiting for a mock server.",
     childId: `${PARENT}-tests`,
@@ -145,7 +145,7 @@ const children = [
         user: byKey("tests").prompt,
         items: [
           command({
-            input: "vp test src/sync",
+            input: "vitest run src/sync",
             status: "failed",
             output: " ✓ src/sync/batch.test.ts (9 tests)\n ✗ src/sync/clock.test.ts > handles skew\n ✗ src/sync/queue.test.ts > replays offline queue\n\n Tests  2 failed | 16 passed (18)\n",
           }),
@@ -188,10 +188,10 @@ const children = [
         user: byKey("bench").prompt,
         items: [
           command({
-            input: "vp run bench --records 1000",
+            input: "node scripts/bench.mjs --records 1000",
             output: "pushBatch  1k   42 ms\n",
           }),
-          command({ input: "vp run bench --records 10000", status: "interrupted", output: "pushBatch  10k  " }),
+          command({ input: "node scripts/bench.mjs --records 10000", status: "interrupted", output: "pushBatch  10k  " }),
         ],
       }),
     ],

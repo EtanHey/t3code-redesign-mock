@@ -115,7 +115,7 @@ const workerThread = childThread({
         reasoning("The `redis` package is not installed yet."),
         approval({
           requestKind: "command",
-          prompt: "vp add redis@5",
+          prompt: "pnpm add redis@5",
           reason: "Install the redis client package",
         }),
       ],

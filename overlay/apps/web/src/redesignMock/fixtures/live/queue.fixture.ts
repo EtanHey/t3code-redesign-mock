@@ -37,8 +37,8 @@ const several = thread({
       user: "Migrate the user table to the new id format.",
       items: [
         reasoning("The migration has to keep both id formats readable until the backfill finishes."),
-        command({ input: "vp run migrate --dry-run", output: "would update 48210 rows in 97 batches\n" }),
-        command({ input: "vp run migrate", status: "running", output: "batch 12/97 ...\n" }),
+        command({ input: "node scripts/migrate-ids.mjs --dry-run", output: "would update 48210 rows in 97 batches\n" }),
+        command({ input: "node scripts/migrate-ids.mjs", status: "running", output: "batch 12/97 ...\n" }),
       ],
     }),
     queuedTurn("After that, update the seed script to create ids in the new format.", "4m", 1),
@@ -56,7 +56,7 @@ const several = thread({
         ],
         { after: "8s" },
       ),
-      ...exec({ input: "vp run migrate --status", output: "batch 52/97, 0 failed\n" }, "1.2s", "2s"),
+      ...exec({ input: "node scripts/migrate-ids.mjs --status", output: "batch 52/97, 0 failed\n" }, "1.2s", "2s"),
     ],
   }),
 });
