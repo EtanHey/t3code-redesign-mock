@@ -1,10 +1,11 @@
-// The setup card reads a snapshot stream per thread. Only the "setup script failed" thread has
-// one; every other thread answers null (no setup recorded), which the app treats as nothing to show.
+// The setup card reads a snapshot stream per thread: the "setup script failed" thread (E07) and the
+// live lane's preparing thread (L08) have one; every other thread answers null (nothing to show).
 import { WS_METHODS, type WorktreeSetupSnapshot } from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
 
 import { agoIso, stream } from "~/redesignMock/api";
 import { SETUP_FAILED_THREAD_ID } from "../../fixtures/errors/e07-workspace-prep.fixture";
+import { PREPARING_THREAD, preparingSnapshot } from "../live/worktree-setup.snapshot";
 
 const done = (id: WorktreeSetupSnapshot["stages"][number]["id"], startedAgo: string, endedAgo: string, detail: string | null) => ({
   id,
@@ -17,6 +18,9 @@ const done = (id: WorktreeSetupSnapshot["stages"][number]["id"], startedAgo: str
 });
 
 export default stream(WS_METHODS.subscribeWorktreeSetup, (input) => {
+  if (input.threadId === PREPARING_THREAD) {
+    return Stream.concat(Stream.make(preparingSnapshot(input.threadId)), Stream.never);
+  }
   if (input.threadId !== SETUP_FAILED_THREAD_ID) return Stream.concat(Stream.make(null), Stream.never);
   const snapshot: WorktreeSetupSnapshot = {
     threadId: input.threadId,

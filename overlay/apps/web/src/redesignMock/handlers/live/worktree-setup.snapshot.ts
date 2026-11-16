@@ -1,14 +1,14 @@
 // L08: the workspace setup the app shows while a thread is still "Setting up": the worktree
 // stages (fetch, checkout, setup script, start agent) with one of them running. Only the planted
 // preparing thread has a setup in flight; every other thread has none.
-import { WS_METHODS, type WorktreeSetupSnapshot } from "@t3tools/contracts";
-import * as Stream from "effect/Stream";
+// The stream itself is answered by handlers/errors/worktree-setup.handler.ts: one RPC, one handler.
+import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
 
-import { agoIso, stream } from "../../api";
+import { agoIso } from "../../api";
 
-const PREPARING_THREAD = "l08-preparing";
+export const PREPARING_THREAD = "l08-preparing";
 
-function preparingSnapshot(threadId: WorktreeSetupSnapshot["threadId"]): WorktreeSetupSnapshot {
+export function preparingSnapshot(threadId: WorktreeSetupSnapshot["threadId"]): WorktreeSetupSnapshot {
   return {
     threadId,
     phase: "running",
@@ -37,10 +37,3 @@ function preparingSnapshot(threadId: WorktreeSetupSnapshot["threadId"]): Worktre
     sequence: 1,
   };
 }
-
-export default stream(WS_METHODS.subscribeWorktreeSetup, (input) =>
-  Stream.concat(
-    Stream.make(input.threadId === PREPARING_THREAD ? preparingSnapshot(input.threadId) : null),
-    Stream.never,
-  ),
-);
