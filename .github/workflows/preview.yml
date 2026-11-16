@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
       - name: Resolve changes
         id: changes
         env:
@@ -54,7 +54,11 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = '${{ steps.changes.outputs.upstream }}'
       - name: Install vite-plus
         if: steps.changes.outputs.build == 'true'
-        run: bash scripts/ci-run.sh npm install -g vite-plus
+        run: |
+          # Match the CLI to upstream's pinned core rather than npm's latest release.
+          version=$(sed -nE 's/^  vite-plus: ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' upstream/pnpm-workspace.yaml)
+          test -n "$version"
+          bash scripts/ci-run.sh npm install -g "vite-plus@$version"
       - uses: actions/cache@v4
         if: steps.changes.outputs.build == 'true'
         with:
@@ -74,7 +78,7 @@ jobs:
         run: |
           bash scripts/ci-run.sh bash scripts/check.sh
       - name: Publish site branch
-        if: steps.changes.outputs.build == 'true'
+        if: steps.changes.outputs.build == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -85,6 +89,9 @@ jobs:
           git config user.email '93338119+EtanHey@users.noreply.github.com'
           git add .
           git commit -qm 'Publish preview'
+          # A fresh dist has its own repository: every publish is a root commit.
+          test "$(git rev-list --count HEAD)" = 1
+          test -z "$(git show -s --format=%P HEAD)"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/site
       - name: Report failure
         if: failure()
@@ -98,7 +105,7 @@ jobs:
           { printf 'Run: %s\nFailing step: %s\n\nLast 60 check log lines, if available:\n\n```\n' "$RUN_URL" "${failed:-unknown}"; tail -60 "$RUNNER_TEMP/check.log" 2>/dev/null || true; printf '\n```\n\n🤖 Generated with GPT-6.1 Terra in T3 Code\n'; } > "$RUNNER_TEMP/issue.md"
           if [ -n "$issue" ]; then gh issue comment "$issue" --body-file "$RUNNER_TEMP/issue.md"; else gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"; fi
       - name: Close failure issue
-        if: success() && steps.changes.outputs.build == 'true'
+        if: success() && steps.changes.outputs.build == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
