@@ -1,4 +1,4 @@
-// The "Start here" index, generated at boot from the registry: one heading per family, each
+// The scenario index, generated at boot from the registry: one heading per family, each
 // planted scenario as a thread link the app opens in place (`t3-thread://v2/<env>/<thread>`,
 // which her markdown renders as an in-app link). A fixture labels itself with
 // `scenario: { family, blurb }`; without a family it is inferred from the fixture's directory,
@@ -10,7 +10,16 @@ import { ENVIRONMENT_ID, PLANTED_PROJECTS, projectIdOf, type PlantedProjectKey }
 import type { ScenarioFamily, ThreadDefinition } from "./definitions";
 import type { Registry } from "./registry";
 
+/**
+ * `{{SCENARIO_INDEX}}` is the whole index and `{{SCENARIO_INDEX:<family>}}` one family's list;
+ * `{{SCENARIO_COUNT}}` and `{{SCENARIO_COUNT:<family>}}` are how many threads those list. Index
+ * threads themselves use scenario ids starting `K00` and are left out of every list.
+ */
 export const SCENARIO_INDEX_PLACEHOLDER = "{{SCENARIO_INDEX}}";
+const PLACEHOLDER = /\{\{SCENARIO_(INDEX|COUNT)(?::([a-z]+))?\}\}/g;
+export const scenarioIndexPlaceholder = (family: ScenarioFamily) => `{{SCENARIO_INDEX:${family}}}`;
+export const scenarioCountPlaceholder = (family?: ScenarioFamily) =>
+  family ? `{{SCENARIO_COUNT:${family}}}` : "{{SCENARIO_COUNT}}";
 
 export const SCENARIO_FAMILIES: ReadonlyArray<{ readonly family: ScenarioFamily; readonly heading: string }> = [
   { family: "conversation", heading: "Conversation" },
@@ -61,10 +70,10 @@ function familyOf(source: string, definition: ThreadDefinition): ScenarioFamily 
 
 const byId = (left: string, right: string) => left.localeCompare(right, "en", { numeric: true });
 
-export function scenarioIndexMarkdown(registry: Registry): string {
+function scenarioGroups(registry: Registry): Map<ScenarioFamily | null, string[]> {
   const groups = new Map<ScenarioFamily | null, string[]>();
   const entries = registry.threads
-    .filter(({ definition }) => definition.scenario && definition.scenario.id !== "K00")
+    .filter(({ definition }) => definition.scenario && !definition.scenario.id.startsWith("K00"))
     .toSorted((left, right) => byId(left.definition.scenario?.id ?? "", right.definition.scenario?.id ?? ""));
   for (const { source, definition } of entries) {
     const scenario = definition.scenario;
@@ -77,6 +86,27 @@ export function scenarioIndexMarkdown(registry: Registry): string {
     const family = familyOf(source, definition);
     groups.set(family, [...(groups.get(family) ?? []), line]);
   }
+  return groups;
+}
+
+export interface ScenarioIndex {
+  readonly markdown: (family?: ScenarioFamily) => string;
+  readonly count: (family?: ScenarioFamily) => number;
+}
+
+/** Built once, on first use: the registry is fixed after boot. */
+export function scenarioIndex(registry: Registry): ScenarioIndex {
+  let groups: Map<ScenarioFamily | null, string[]> | null = null;
+  const get = () => (groups ??= scenarioGroups(registry));
+  return {
+    markdown: (family) => scenarioIndexMarkdown(get(), family),
+    count: (family) =>
+      family ? (get().get(family) ?? []).length : [...get().values()].reduce((sum, lines) => sum + lines.length, 0),
+  };
+}
+
+function scenarioIndexMarkdown(groups: Map<ScenarioFamily | null, string[]>, family?: ScenarioFamily): string {
+  if (family) return (groups.get(family) ?? []).join("\n");
   const sections = [
     ...SCENARIO_FAMILIES.map(({ family, heading }) => ({ heading, lines: groups.get(family) ?? [] })),
     { heading: "Other", lines: groups.get(null) ?? [] },
@@ -84,15 +114,21 @@ export function scenarioIndexMarkdown(registry: Registry): string {
   return sections.map(({ heading, lines }) => `**${heading}**\n\n${lines.join("\n")}`).join("\n\n");
 }
 
-/** Puts the generated index where a planted message says `{{SCENARIO_INDEX}}`. */
+const FAMILIES = new Set<string>(SCENARIO_FAMILIES.map(({ family }) => family));
+const isFamily = (value: string | undefined): value is ScenarioFamily => value !== undefined && FAMILIES.has(value);
+
+/** Puts the generated index where a planted message carries a placeholder. */
 export function fillScenarioIndex(
   projection: OrchestrationV2ThreadProjection,
-  index: () => string,
+  index: ScenarioIndex,
 ): OrchestrationV2ThreadProjection {
-  const has = (text: string) => text.includes(SCENARIO_INDEX_PLACEHOLDER);
+  const has = (text: string) => text.includes("{{SCENARIO_");
   if (!projection.messages.some((message) => has(message.text))) return projection;
-  const markdown = index();
-  const fill = (text: string) => text.replace(SCENARIO_INDEX_PLACEHOLDER, markdown);
+  const fill = (text: string) =>
+    text.replace(PLACEHOLDER, (match, kind: string, family: string | undefined) => {
+      if (family !== undefined && !isFamily(family)) throw new Error(`redesign-mock: unknown index family in ${match}`);
+      return kind === "COUNT" ? String(index.count(family)) : index.markdown(family);
+    });
   return {
     ...projection,
     messages: projection.messages.map((message) => (has(message.text) ? { ...message, text: fill(message.text) } : message)),

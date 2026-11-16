@@ -19,7 +19,7 @@ import { ENVIRONMENT_ID, ENVIRONMENT_LABEL, PLANTED_PROJECTS, projectIdOf, works
 import { rpc, type AnyCommandReaction, type AnyStreamHandler, type AnyUnaryHandler } from "./definitions";
 import { MockAssets } from "./assets";
 import { withDefaultContextUsage } from "./defaults";
-import { fillScenarioIndex, scenarioIndexMarkdown } from "./scenarioIndex";
+import { fillScenarioIndex, scenarioIndex } from "./scenarioIndex";
 import { MockEnvironment } from "./environment";
 import { redactCardAnswer, VisitorLog, type CardAnswer, type LogEntry } from "./persistence";
 import { launchThread, linkRecordCommand, recordCard, reduceCommand, secretRecordCommand } from "./reducer";
@@ -183,6 +183,7 @@ function boot(): MockRuntime {
   // Threads, checked against the contract so a changed schema fails loudly at boot.
   const validate = Schema.decodeUnknownOption(OrchestrationV2ThreadProjection);
   const encode = Schema.encodeUnknownOption(OrchestrationV2ThreadProjection);
+  const index = scenarioIndex(registry);
   for (const { source, definition } of registry.threads) {
     const environment = environments.get(definition.environmentId ?? ENVIRONMENT_ID);
     if (!environment) throw new Error(`redesign-mock: ${source} names an unknown environment`);
@@ -192,7 +193,7 @@ function boot(): MockRuntime {
       if (import.meta.env.DEV) throw new Error(message);
       console.error(message);
     }
-    const planted = fillScenarioIndex(withDefaultContextUsage(definition.projection), () => scenarioIndexMarkdown(registry));
+    const planted = fillScenarioIndex(withDefaultContextUsage(definition.projection), index);
     environment.server.addThread(planted, {
       definition,
       ...(definition.shell ? { shellPatch: definition.shell } : {}),

@@ -21,16 +21,30 @@ const CLIENT_SETTINGS_KEY = "t3code:client-settings:v1";
  */
 const SHOWCASE_SETTINGS: Partial<ClientSettings> = {
   mathRenderingEnabled: true,
+  // The demo is "send a message, queue a message": a plain send while the agent works queues it.
+  // Steer stays one modifier away (her ⌘/Ctrl-click and shortcut), and Settings can flip it.
+  followUpBehavior: "queue",
 };
+
+/** Set once per browser, so a visitor who later picks Steer in Settings keeps that choice. */
+const FOLLOW_UP_SEEDED_KEY = "t3code-redesign-mock:follow-up-seeded";
 
 function seedClientSettings(): void {
   try {
     const raw = window.localStorage.getItem(CLIENT_SETTINGS_KEY);
     const settings: Record<string, unknown> = raw ? JSON.parse(raw) : { ...SHOWCASE_SETTINGS };
-    if (raw === null || typeof settings.onboardingCompletedAt !== "string") {
+    let changed = raw === null;
+    if (typeof settings.onboardingCompletedAt !== "string") {
       settings.onboardingCompletedAt = new Date().toISOString();
-      window.localStorage.setItem(CLIENT_SETTINGS_KEY, JSON.stringify(settings));
+      changed = true;
     }
+    // Visitors from before queue became the default still get it, once.
+    if (window.localStorage.getItem(FOLLOW_UP_SEEDED_KEY) === null) {
+      settings.followUpBehavior = SHOWCASE_SETTINGS.followUpBehavior;
+      window.localStorage.setItem(FOLLOW_UP_SEEDED_KEY, "1");
+      changed = true;
+    }
+    if (changed) window.localStorage.setItem(CLIENT_SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     // Without storage the app still boots; it just shows its first-run choices.
   }

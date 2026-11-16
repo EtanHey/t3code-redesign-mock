@@ -1,7 +1,12 @@
 // Smoke run over a built dist/: opens every registered scenario, fails on an error boundary,
-// an uncaught or console error, any request to another origin, or any WebSocket, and saves a
-// screenshot per scenario to docs.local/shots/<scenario-id>.png. Then the interaction tests:
-// send in an idle thread (working), send again (queued), Stop (idle), reload (still there); and,
+// an uncaught or console error (CSP violations included), any request attempt to another origin
+// (sent, failed or blocked), or any WebSocket, and saves a screenshot per scenario to
+// docs.local/shots/<scenario-id>.png; then scrolls each thread end to end so lazy images load
+// too. The page is served under a made-up public hostname (mapped to the local server by
+// Chromium's host resolver), never 127.0.0.1, so no localhost special case can hide a request.
+// Then the interaction tests, at a phone viewport and at desktop width, typed and sent with
+// Enter as a visitor would: send in an idle thread (working), send again (a queued tray row, not
+// a steer bubble), Stop (idle), reload (still there), and a pasted URL asks no one; and,
 // at a phone viewport and at desktop width, answer K03 (no empty bubble, the answer reads as its
 // label), Stop and Resume it, and take every approval path on Q01 and Q04, each in a fresh context.
 //
@@ -43,17 +48,38 @@ const fail = (message) => {
   console.log(`  ✗ ${message}`);
 };
 
-const { server, origin } = await serve(dist);
-const browser = await chromium.launch();
+// A made-up name under a public suffix: the app treats loopback and private names specially
+// (her favicon code skips them), and the live site is neither.
+const SMOKE_HOST = process.env.SMOKE_HOST ?? "redesign-mock-smoke.net";
+const { server, origin: localOrigin } = await serve(dist);
+const origin = `http://${SMOKE_HOST}:${new URL(localOrigin).port}`;
+const browser = await chromium.launch({
+  args: [
+    `--host-resolver-rules=MAP ${SMOKE_HOST} 127.0.0.1, MAP * ~NOTFOUND`,
+    // Plain http on a non-loopback name is not a secure context; the live site (https) is.
+    `--unsafely-treat-insecure-origin-as-secure=${origin}`,
+  ],
+});
 
 // Listeners report against whatever that page is doing now.
 function watch(page, initial) {
   let current = initial;
   const label = () => current;
-  page.on("request", (request) => {
+  const elsewhere = (request) => {
     const url = new URL(request.url());
-    if (url.protocol === "data:" || url.protocol === "blob:") return;
-    if (url.origin !== origin) fail(`${label()}: request to another origin: ${request.url()}`);
+    return url.protocol !== "data:" && url.protocol !== "blob:" && url.origin !== origin;
+  };
+  // An attempt counts even when the CSP or the resolver stops it before it leaves.
+  page.on("request", (request) => {
+    if (elsewhere(request)) fail(`${label()}: request to another origin: ${request.url()}`);
+  });
+  page.on("requestfailed", (request) => {
+    if (elsewhere(request)) fail(`${label()}: request to another origin failed (${request.failure()?.errorText}): ${request.url()}`);
+  });
+  void page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (event) =>
+      console.error(`CSP violation: ${event.violatedDirective} ${event.blockedURI}`),
+    );
   });
   page.on("websocket", (socket) => fail(`${label()}: WebSocket opened: ${socket.url()}`));
   page.on("pageerror", (error) => fail(`${label()}: uncaught error: ${error.message}`));
@@ -77,6 +103,28 @@ async function checkPage(page, label) {
   }));
   for (const request of mock.blocked) fail(`${label}: the network guard blocked ${request.kind} ${request.url}`);
   for (const message of mock.replayFailures) fail(`${label}: saved action did not replay: ${message}`);
+}
+
+/** Scrolls every scrolled box from its top to its end, so lazily loaded images load. */
+async function scrollThrough(page) {
+  await page
+    .evaluate(async () => {
+      const pause = () => new Promise((done) => setTimeout(done, 60));
+      const boxes = [...document.querySelectorAll("*")].filter((element) => {
+        const style = getComputedStyle(element);
+        return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 40;
+      });
+      for (const box of boxes) {
+        const end = box.scrollTop;
+        for (let top = 0; top < box.scrollHeight; top += Math.max(200, box.clientHeight * 0.8)) {
+          box.scrollTop = top;
+          await pause();
+        }
+        box.scrollTop = end;
+      }
+    })
+    .catch(() => {});
+  await page.waitForTimeout(400);
 }
 
 // Scenarios -----------------------------------------------------------------------------------
@@ -124,8 +172,9 @@ async function runScenario(scenario) {
   } catch (error) {
     fail(`${label}: did not render${scenario.waitForText ? ` "${scenario.waitForText}"` : ""}: ${error.message.split("\n")[0]}`);
   }
-  await checkPage(scenarioPage, label);
   await scenarioPage.screenshot({ path: resolve(shots, `${scenario.id}.png`) });
+  await scrollThrough(scenarioPage);
+  await checkPage(scenarioPage, label);
   await context.close();
   if (failures.length === before) console.log(`  ✓ ${scenario.id} ${scenario.label}`);
 }
@@ -140,24 +189,38 @@ console.log(`smoke: scenarios took ${Math.round((Date.now() - started) / 1000)}s
 
 // Interaction ---------------------------------------------------------------------------------
 
-if (runInteraction) {
-  console.log("smoke: interaction (send, queue, stop, reload)");
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
+const VIEWS = [
+  { name: "phone", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+  { name: "desktop", viewport: { width: 1440, height: 900 } },
+];
+
+async function interaction(view) {
+  console.log(`smoke: interaction ${view.name} (send, queue, stop, reload, paste a URL)`);
+  const context = await browser.newContext({ ...view, colorScheme: "light" });
   const live = await context.newPage();
-  watch(live, "interaction");
+  const label = `interaction ${view.name}`;
+  watch(live, label);
   const first = `Smoke check ${Date.now()}`;
   const second = `Then queue this ${Date.now()}`;
   const step = async (name, body) => {
     try {
       await body();
-      console.log(`  ✓ ${name}`);
+      console.log(`  ✓ ${view.name}: ${name}`);
     } catch (error) {
-      fail(`interaction: ${name}: ${error.message.split("\n")[0]}`);
-      await live.screenshot({ path: resolve(shots, `interaction-failed.png`) }).catch(() => {});
+      fail(`${label}: ${name}: ${error.message.split("\n")[0]}`);
+      await live.screenshot({ path: resolve(shots, `interaction-${view.name}-failed.png`) }).catch(() => {});
     }
   };
-  const composer = live.locator('[contenteditable="true"]').last();
   const stop = live.getByRole("button", { name: "Stop generation" });
+  // What a visitor does: tap into the composer (a phone shows it collapsed), type, press Enter.
+  const type = async (text) => {
+    const expand = live.getByRole("button", { name: "Expand composer" });
+    if (await expand.isVisible()) await (view.hasTouch ? expand.tap() : expand.click());
+    await live.locator('[contenteditable="true"]').last().click();
+    await live.keyboard.type(text);
+  };
+  const queuedRow = (text) => live.locator(".group\\/queued", { hasText: text });
+  const bubble = (text) => live.locator("[data-user-message-bubble]", { hasText: text });
 
   await step("open an idle thread", async () => {
     await live.goto(origin + IDLE_THREAD);
@@ -165,34 +228,60 @@ if (runInteraction) {
     if (await stop.isVisible()) throw new Error("the idle thread already shows Stop");
   });
   await step("send: the message appears and the thread goes to working", async () => {
-    await composer.click();
-    await live.keyboard.type(first);
+    await type(first);
     await live.keyboard.press("Enter");
-    await live.getByText(first).first().waitFor({ timeout: 10_000 });
+    await bubble(first).first().waitFor({ timeout: 10_000 });
     await stop.waitFor({ state: "visible", timeout: 10_000 });
     await live.getByText("Working for", { exact: false }).first().waitFor({ timeout: 10_000 });
   });
-  await step("send again: the second message is queued", async () => {
-    await composer.click();
-    await live.keyboard.type(second);
+  await step("send again with Enter: the second message is queued, not steered", async () => {
+    await type(second);
+    const send = live.getByRole("button", { name: "Queue message" });
+    if (!(await send.isVisible())) throw new Error("the busy composer's send button is not \"Queue message\"");
     await live.keyboard.press("Enter");
-    await live.getByText(second).first().waitFor({ timeout: 10_000 });
+    await queuedRow(second).first().waitFor({ timeout: 10_000 });
+    await live.waitForTimeout(800);
+    if (await bubble(second).count()) throw new Error("the second message became a history bubble (steered)");
     if (!(await stop.isVisible())) throw new Error("queueing stopped the run");
   });
+  await live.screenshot({ path: resolve(shots, `interaction-${view.name}-queued.png`) });
   await step("stop: the thread goes idle", async () => {
-    await stop.click();
+    await (view.hasTouch ? stop.tap() : stop.click());
     await stop.waitFor({ state: "hidden", timeout: 10_000 });
     await live.getByText("Stopped", { exact: false }).first().waitFor({ timeout: 10_000 });
   });
-  await live.screenshot({ path: resolve(shots, "interaction.png") });
+  await live.screenshot({ path: resolve(shots, `interaction-${view.name}.png`) });
   await step("reload: both messages are still there", async () => {
     await live.reload();
     await live.getByText(first).first().waitFor({ timeout: 20_000 });
     await live.getByText(second).first().waitFor({ timeout: 10_000 });
   });
-  await checkPage(live, "interaction");
+  await step("send pasted URLs: no request to their hosts", async () => {
+    const urls = "See https://docs.example-vendor.com/guide and https://github.com/sample-labs/orbit-dashboard and " + origin + "/design-system";
+    await type(urls);
+    await live.keyboard.press("Enter");
+    await bubble("docs.example-vendor.com").first().waitFor({ timeout: 10_000 });
+    await scrollThrough(live);
+  });
+  if (view.name === "desktop") {
+    await step("a new thread: send, then Enter again queues", async () => {
+      await live.getByRole("button", { name: "New thread", exact: true }).first().click();
+      const opener = `New thread ${Date.now()}`;
+      const follow = `New thread follow-up ${Date.now()}`;
+      await type(opener);
+      await live.keyboard.press("Enter");
+      await stop.waitFor({ state: "visible", timeout: 15_000 });
+      await type(follow);
+      await live.keyboard.press("Enter");
+      await queuedRow(follow).first().waitFor({ timeout: 10_000 });
+      if (await bubble(follow).count()) throw new Error("the follow-up became a history bubble (steered)");
+    });
+  }
+  await checkPage(live, label);
   await context.close();
 }
+
+if (runInteraction) for (const view of VIEWS) await interaction(view);
 
 // Requests: answering, approving and resuming, at a phone viewport and at desktop width --------
 
@@ -204,11 +293,6 @@ const emptyBubbles = (page) =>
       return !(body?.textContent ?? "").trim() && !bubble.querySelector("img");
     }).length,
   );
-
-const VIEWS = [
-  { name: "phone", viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
-  { name: "desktop", viewport: { width: 1440, height: 900 } },
-];
 
 async function requestCase(view, name, path, waitFor, body) {
   const context = await browser.newContext({ ...view, colorScheme: "dark" });

@@ -8,9 +8,10 @@ default-exports one definition or an array; import everything from `~/redesignMo
 Duplicates (thread id, scenario id, RPC method, command reaction) stop the boot naming both files.
 Your handler for a method the kernel answers (VCS status, refs, settings...) replaces the kernel's.
 `scenario.family` (`conversation live requests errors agents git panes sidebar`) and `blurb` place a
-thread in the generated "Start here" index; the family defaults to your fixture directory.
+thread in the generated index (one thread per family, linked from "Start here"); the family defaults
+to your fixture directory.
 Projects are keys: `start conversation live requests errors agents git sidebar`. The sidebar is a
-recency inbox (pinned first), so set `at` to order rows. Kernel scenario ids are `K00`-`K08`.
+recency inbox (pinned first), so set `at` to order rows. Kernel scenario ids are `K00`-`K08`; `K00-*` are the index threads.
 
 ```ts
 // fixtures/errors/provider-failed.fixture.ts
@@ -79,14 +80,19 @@ stops the run. An answered question records `questionAnswer` with `questionTextB
 the answer as sent, which is the option's `value` when it has one, else its label (leave `value`
 off for a readable row). Secret and link cards answer over `secrets.answerRequest` and
 `peerLinks.answerRequest` (logged redacted). "Resume thread" shows a "Resumed thread" row, not a
-bubble; Steer sends steer, a plain send queues. A running command row reads "Running <program>"
+bubble; a first visit is seeded with `followUpBehavior: "queue"`, so Enter or Send while working
+queues and her ⌘/Ctrl-click steers. A running command row reads "Running <program>"
 (upstream's `commandProgramName`), so use commands a reader knows (`npm`, `git`, `pytest`).
 `/design-system` (her catalog, dev-only upstream) is on in this build.
 
 Unhandled RPCs never hang (silent stream, typed empty result, or a "not available" error). Add
 `?mockdebug` to any URL, or call `window.__MOCK__.unhandled()`, to see what a blank panel waits on.
 
-`scripts/check.sh` typechecks, builds and smokes: every scenario must render with no errors and no
-request to another origin; screenshots land in `docs.local/shots/<scenario-id>.png`.
+Link and tool favicons are shimmed (`vite/redesignMock.ts`): links show her globe icon, so no URL in
+any message asks Google or the linked site for an image.
+
+`scripts/check.sh` typechecks, builds and smokes under a made-up public hostname (not 127.0.0.1):
+every scenario must render with no console error and no request attempt to another origin, even a
+blocked one, after scrolling the thread end to end; screenshots land in `docs.local/shots/<scenario-id>.png`.
 `node scripts/smoke.mjs --only E01,E02` reruns a few in seconds (each scenario gets a fresh
 browser); `scripts/update-upstream.sh` moves `upstream/` to her newest tip. Content is public: invent everything.

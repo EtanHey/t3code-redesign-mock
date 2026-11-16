@@ -1,10 +1,11 @@
 // Workspace panes (PR #28845): a thread whose workspace already shows its chat beside file
-// previews and a terminal, with tab strips holding several tabs (P00, covering P01 terminals,
-// P02 files and previews, P05 browser and device), and a second workspace for the thread
+// previews and a terminal, with tab strips holding several tabs (P00, covering P01 terminals and
+// P02 files and previews), and a second workspace for the thread
 // details panel (P06, left out of the planted layout so its chat has the width the panel needs)
 // and a files thread in a second workspace (P02). The layout is planted by layout-seed.ts. The
 // right-most column starts left of x~1100 at 1440 wide so its short tab strip leaves the corner
-// free for the preview's "Mock preview" pill (which otherwise hops to the left edge).
+// free for the preview's "Mock preview" pill. Her browser preview and device panel are desktop-app
+// features (on the web they only say so), so the planted layout leaves them out.
 import { assistant, command, fileChange, item, reasoning, thread, turn } from "~/redesignMock/api";
 
 import { seedLayoutOnce, THREAD_TERMINAL } from "./layout-seed";
@@ -75,9 +76,11 @@ const panes = thread({
             "- **Left:** this chat.",
             "- **Middle, top:** tabs for `README.md` (markdown, with Preview and Source), `src/summary.ts`, `data/visits.csv` and `docs/dashboard.png`.",
             "- **Middle, bottom:** the terminal, with `pnpm dev` still running, `pnpm test` passed and `pnpm lint` failed.",
-            "- **Right:** the file tree, and below it a browser tab and the device panel.",
+            "- **Right:** the file tree.",
             "",
             "Drag a tab to another pane or to an edge to split, close one, then reopen it from the tab menu. Nothing you do here leaves your browser.",
+            "",
+            "**What this web preview can't show:** the browser preview and the device panel run only in the T3 Code desktop app, so they are not in this layout. **On a phone**, the layout shows one pane at a time, so you see only this chat; open the preview on a wide screen to see the panes side by side.",
           ].join("\n"),
         ),
       ],
@@ -148,8 +151,6 @@ seedLayoutOnce({
         file("data/visits.csv"),
         file("docs/dashboard.png"),
         { id: "files", kind: "files" },
-        { id: "browser:new", kind: "preview", resourceId: null },
-        { id: "device", kind: "device" },
       ],
       activeSurfaceId: "file:README.md",
       terminals: { ids: ["term-1", "term-2", "term-3", "term-4"], active: "term-1" },
@@ -207,16 +208,7 @@ seedLayoutOnce({
               id: "pane:mock-panes-tree",
               tabs: [{ thread: PANES_THREAD_ID, surfaceId: "files" }],
               active: 0,
-              size: 0.55,
-            },
-            {
-              id: "pane:mock-panes-browser",
-              tabs: [
-                { thread: PANES_THREAD_ID, surfaceId: "browser:new" },
-                { thread: PANES_THREAD_ID, surfaceId: "device" },
-              ],
-              active: 0,
-              size: 0.45,
+              size: 1,
             },
           ],
         },

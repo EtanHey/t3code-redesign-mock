@@ -1,4 +1,4 @@
-// Build seam for the redesign mock preview. Replaces two upstream modules at their file paths,
+// Build seam for the redesign mock preview. Replaces three upstream modules at their file paths,
 // runs the mock install before the app's bootstrap, and forces the hosted-mode env empty.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeCrypto from "node:crypto";
@@ -15,6 +15,7 @@ const mockRoot = NodePath.join(webRoot, "src/redesignMock");
 
 const DRIVER = NodePath.join(repoRoot, "packages/client-runtime/src/connection/driver.ts");
 const LATENCY = NodePath.join(webRoot, "src/rpc/requestLatencyState.ts");
+const FAVICON = NodePath.join(repoRoot, "packages/shared/src/favicon.ts");
 const ORIGINAL = "?redesign-mock-original";
 
 /** Env vars that would bake an origin, Clerk or the hosted-static mode into the bundle. */
@@ -109,6 +110,26 @@ function seamPlugin(): Plugin {
           `export function trackRpcRequestSent() {}`,
         ].join("\n");
       }
+      if (id === FAVICON) {
+        // Her link and tab icons ask Google's favicon service (or the linked site) for an image.
+        // The mock asks no other origin for anything: links show her globe icon instead, and a
+        // tool's icon is kept only when it is a data:, blob: or same-origin URL.
+        return [
+          `export * from ${JSON.stringify(FAVICON + ORIGINAL)};`,
+          `import { toolActivityFaviconUrl as upstreamToolActivityFaviconUrl } from ${JSON.stringify(FAVICON + ORIGINAL)};`,
+          `export function faviconUrlForOrigin() { return null; }`,
+          `export function toolActivityFaviconUrl(icon, appearance, size) {`,
+          `  const url = upstreamToolActivityFaviconUrl(icon, appearance, size);`,
+          `  if (url === null) return null;`,
+          `  try {`,
+          `    const parsed = new URL(url, window.location.href);`,
+          `    if (parsed.protocol === "data:" || parsed.protocol === "blob:") return url;`,
+          `    return parsed.origin === window.location.origin ? url : null;`,
+          `  } catch { return null; }`,
+          `}`,
+        ].join("\n");
+      }
+      if (id === FAVICON + ORIGINAL) return NodeFS.readFileSync(FAVICON, "utf8");
       if (id === DRIVER + ORIGINAL) return NodeFS.readFileSync(DRIVER, "utf8");
       if (id === LATENCY + ORIGINAL) return NodeFS.readFileSync(LATENCY, "utf8");
       return null;

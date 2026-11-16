@@ -1,12 +1,26 @@
-// The thread the root URL opens: what this preview is, that nothing is real, and what to try.
+// The thread the root URL opens, and the index threads it links to. The app opens a thread at
+// its end, so "Start here" ends on a short message (what this is, that nothing is real, what to
+// try, where each family of states lives); the long lists live in one index thread per family,
+// plus one with everything.
 import { ThreadId } from "@t3tools/contracts";
+import { formatThreadLink } from "@t3tools/shared/threadLinks";
 
-import { ago, assistant, thread, turn } from "../../api";
+import { ago, assistant, ENVIRONMENT_ID, thread, turn, type ScenarioFamily } from "../../api";
+import {
+  SCENARIO_FAMILIES,
+  SCENARIO_INDEX_PLACEHOLDER,
+  scenarioCountPlaceholder,
+  scenarioIndexPlaceholder,
+} from "../../kernel/scenarioIndex";
 
 export const START_HERE_THREAD_ID = ThreadId.make("start-here");
+const ALL_INDEX_THREAD_ID = ThreadId.make("index-all");
+const indexThreadId = (family: ScenarioFamily) => ThreadId.make(`index-${family}`);
+const threadLink = (threadId: ThreadId, label: string) =>
+  formatThreadLink({ environmentId: ENVIRONMENT_ID, threadId }, label);
 
-// Her markdown opens a path such as "/design-system" as a workspace file, so the link is absolute;
-// it opens the catalog in a new tab of this same preview.
+// Her markdown opens a path such as "/design-system" as a workspace file, so these links are
+// absolute; they open in a new tab of this same preview.
 const ORIGIN = typeof window === "undefined" ? "" : window.location.origin;
 const DESIGN_SYSTEM_URL = `${ORIGIN}/design-system`;
 const SETTINGS_PAGES = [
@@ -24,36 +38,76 @@ const SETTINGS_PAGES = [
   .map(([label, path]) => `[${label}](${ORIGIN}/settings/${path})`)
   .join(" · ");
 
-const WELCOME = `This is an **unofficial, fully mocked preview** of T3 Code as it looks on Maria's redesign branch (\`maria/redesign/6-workspace-panes\`, PRs #28839 to #28845). The real interface runs in your browser against a fake server: there is no backend, no agent and no account, and nothing you type leaves this page.
+// Her markdown shows a thread link by the thread's title, so the titles are the link text.
+const FAMILY_LINKS = SCENARIO_FAMILIES.map(({ family, heading }) => threadLink(indexThreadId(family), heading)).join(
+  " · ",
+);
 
-**Design system:** the redesign's primitives, type roles and colours have their own catalog page, [the design system catalog](${DESIGN_SYSTEM_URL}). Upstream shows it in development builds only; this preview turns it on.
+const MORE = `**Beyond the threads.** The redesign's primitives, type roles and colours have their own page, [the design system catalog](${DESIGN_SYSTEM_URL}); upstream shows it in development builds only, and this preview turns it on. The floating settings panel is its own part of the redesign; each page opens in a new tab: ${SETTINGS_PAGES}.
 
-**Settings pages:** the floating settings panel is its own part of the redesign. Each of these opens in a new tab: ${SETTINGS_PAGES}.
+What you do is saved in this browser only, so a reload keeps it and nobody else sees it. The preview rebuilds every hour from Maria's newest commit; its source is at [github.com/EtanHey/t3code-redesign-mock](https://github.com/EtanHey/t3code-redesign-mock).`;
 
-**Nothing here is real.** The threads and replies are planted. Agents never finish: a message you send starts a run that keeps working until you press Stop.
+const WELCOME = `An **unofficial, fully mocked preview** of T3 Code on Maria's redesign branch (\`maria/redesign/6-workspace-panes\`). The real interface runs in your browser against a fake server. **Nothing here is real:** no backend, no agent, and nothing you type leaves this page.
 
-Things to try: send a message here or in any thread, then send another while it works to queue it, and press **Stop**. Start, pin, rename, snooze or settle threads; open **Settings** and the command palette.
+**Try it:** send a message, send another while it works (it queues), then press **Stop**.
 
-## Every planted state
+**Find a state** (${scenarioCountPlaceholder()} planted): ${FAMILY_LINKS} · ${threadLink(ALL_INDEX_THREAD_ID, "all in one list")}.
 
-The sidebar lists threads by recency, with the project as a small label above each title. To find a state, use this list; each link opens its thread.
+**Also:** [design system](${DESIGN_SYSTEM_URL}) · [Settings](${ORIGIN}/settings/general). **Reset demo**, under the **Mock preview** notice, brings back the planted state.`;
 
-{{SCENARIO_INDEX}}
+const BACK = `Back to ${threadLink(START_HERE_THREAD_ID, "Start here")}.`;
 
-What you do is saved in this browser only, so a reload keeps it and nobody else sees it. **Reset demo**, under the **Mock preview** notice, brings back the planted state. The preview rebuilds every hour from Maria's newest commit; its source is at [github.com/EtanHey/t3code-redesign-mock](https://github.com/EtanHey/t3code-redesign-mock).`;
-
-export default thread({
+const startHere = thread({
   id: START_HERE_THREAD_ID,
   project: "start",
   title: "Start here: what this preview is",
-  scenario: { id: "K00", label: "Start here", waitForText: "Nothing here is real." },
+  scenario: { id: "K00", label: "Start here", waitForText: "Nothing here is real:" },
   thread: { pinnedAt: ago("2d"), pinOrderKey: "a0" },
   turns: [
+    turn({ at: "4m", took: "5s", user: "What else is in here?", items: [assistant(MORE)] }),
+    turn({ at: "3m", took: "6s", user: "What am I looking at?", items: [assistant(WELCOME)] }),
+  ],
+});
+
+// Index threads sit at the bottom of the inbox: old, unpinned, reached from the links above.
+const familyIndexes = SCENARIO_FAMILIES.map(({ family, heading }, order) =>
+  thread({
+    id: indexThreadId(family),
+    project: "start",
+    title: heading,
+    scenario: { id: `K00-${family}`, label: `Index: ${heading}`, waitForText: BACK.slice(0, 7) },
+    turns: [
+      turn({
+        at: `${30 + order}d`,
+        took: "2s",
+        user: `Which ${heading.toLowerCase()} states are planted?`,
+        items: [
+          assistant(
+            `**${heading}:** ${scenarioCountPlaceholder(family)} planted threads. Each link opens its thread. ${BACK}\n\n${scenarioIndexPlaceholder(family)}\n\n${BACK}`,
+          ),
+        ],
+      }),
+    ],
+  }),
+);
+
+const allIndex = thread({
+  id: ALL_INDEX_THREAD_ID,
+  project: "start",
+  title: "Every planted state",
+  scenario: { id: "K00-all", label: "Index: every planted state", waitForText: BACK.slice(0, 7) },
+  turns: [
     turn({
-      at: "3m",
-      took: "6s",
-      user: "What am I looking at?",
-      items: [assistant(WELCOME)],
+      at: "29d",
+      took: "3s",
+      user: "List every planted state",
+      items: [
+        assistant(
+          `Every planted thread, ${scenarioCountPlaceholder()} in all, by family. The sidebar lists threads by recency, so use this list to find a state. ${BACK}\n\n${SCENARIO_INDEX_PLACEHOLDER}\n\n${BACK}`,
+        ),
+      ],
     }),
   ],
 });
+
+export default [startHere, ...familyIndexes, allIndex];

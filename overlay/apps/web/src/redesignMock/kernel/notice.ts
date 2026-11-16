@@ -2,10 +2,11 @@
 // naming the upstream branch and commit, linking the PR and the mock repo, and carrying "Reset
 // demo". Plain DOM in a fixed layer of its own, so it never takes part in the app's layout.
 //
-// It must never sit on one of her controls or on the composer. Instead of trusting a fixed
-// spot, it measures: it tries the free end of the sidebar footer, then the top right, then a
-// thin tab on the left edge, and takes the first spot that covers no button, link, tab, field
-// or frame of hers. It checks again on resize and every few seconds (tabs open, panels move).
+// It must never sit on one of her controls or on the composer, and it always shows its words.
+// Instead of trusting a fixed spot, it measures: it keeps its spot while that stays free, else
+// tries the free end of the sidebar footer and the top right (wide screens), then scans down the
+// right and left edges of the screen, and takes the first spot that covers no button, link, tab,
+// field or frame of hers. It checks again on resize and every few seconds (tabs open, panels move).
 import type { MockRuntime } from "./runtime";
 import { BUILD_INFO } from "./runtime";
 
@@ -20,8 +21,6 @@ const STYLE = `
 .rdm-notice *{box-sizing:border-box}
 .rdm-pill{display:flex;align-items:center;gap:6px;height:24px;padding:0 9px 0 8px;border:0;border-radius:999px;cursor:pointer;color:#f5f5f4;font:inherit;white-space:nowrap;background:rgba(24,24,27,.88);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 4px 14px rgba(0,0,0,.25)}
 .rdm-pill:hover{background:rgba(39,39,42,.95)}
-.rdm-notice[data-spot="edge"] .rdm-pill{width:12px;height:44px;padding:0;justify-content:center;border-radius:0 8px 8px 0}
-.rdm-notice[data-spot="edge"] .rdm-label{display:none}
 .rdm-dot{width:7px;height:7px;border-radius:50%;background:#f59e0b;flex:none;box-shadow:0 0 0 3px rgba(245,158,11,.22)}
 .rdm-card{position:fixed;width:min(320px,calc(100vw - 24px));padding:12px 12px 10px;border-radius:12px;background:rgba(24,24,27,.96);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 12px 32px rgba(0,0,0,.4)}
 .rdm-card b{display:block;font-size:12.5px;font-weight:650;margin-bottom:4px}
@@ -33,15 +32,40 @@ const STYLE = `
 .rdm-button[data-armed="true"]{background:#b91c1c}
 `;
 
-type Spot = "footer" | "top" | "edge";
+/** Where the pill sits: a side and a distance from it on each axis, in CSS pixels. */
+interface Spot {
+  readonly x: "left" | "right";
+  readonly dx: number;
+  readonly y: "top" | "bottom";
+  readonly dy: number;
+}
 
-/** Where each spot puts the pill. The footer spot is the empty end of her sidebar's icon row. */
-const SPOTS: Record<Spot, Partial<CSSStyleDeclaration>> = {
-  footer: { left: "116px", bottom: "13px", top: "", right: "" },
-  top: { right: "52px", top: "14px", left: "", bottom: "" },
-  edge: { left: "0px", top: "38%", right: "", bottom: "" },
-};
-const ORDER: ReadonlyArray<Spot> = ["footer", "top", "edge"];
+const sameSpot = (left: Spot, right: Spot) =>
+  left.x === right.x && left.dx === right.dx && left.y === right.y && left.dy === right.dy;
+
+/** Below this width there is no sidebar footer and the titlebar has no free corner. */
+const WIDE = 640;
+const MARGIN = 12;
+const STEP = 12;
+
+/** The empty end of her sidebar's icon row, then the top right corner. */
+const FIXED_SPOTS: ReadonlyArray<Spot> = [
+  { x: "left", dx: 116, y: "bottom", dy: 13 },
+  { x: "right", dx: 52, y: "top", dy: 14 },
+];
+
+/** Every spot to try, best first: the fixed ones on wide screens, then down both edges. */
+function candidates(): Spot[] {
+  const spots: Spot[] = window.innerWidth >= WIDE ? [...FIXED_SPOTS] : [];
+  // The titlebar row first (free when a sheet such as her phone sidebar covers it), then down
+  // from just below it (52px on a phone), then up from the bottom edge.
+  const right = (dy: number): Spot => ({ x: "right", dx: MARGIN, y: "top", dy });
+  const left = (dy: number): Spot => ({ x: "left", dx: MARGIN, y: "top", dy });
+  spots.push(right(14));
+  for (let dy = 58; dy <= window.innerHeight - 40; dy += STEP) spots.push(right(dy), left(dy));
+  spots.push({ x: "left", dx: 116, y: "bottom", dy: 13 }, { x: "right", dx: 52, y: "bottom", dy: 13 });
+  return spots;
+}
 
 const INTERACTIVE =
   "button, a[href], input, textarea, select, iframe, [role=button], [role=tab], [role=link], [role=textbox], [contenteditable=true], [contenteditable='']";
@@ -64,25 +88,33 @@ function composerBoxes(): DOMRect[] {
   return boxes;
 }
 
-/** True when the rectangle lies over the composer or one of the app's visible controls. */
-function coversControl(root: HTMLElement, rect: DOMRect): boolean {
-  if (composerBoxes().some((box) => box.width > 0 && overlaps(box, rect))) return true;
+/** One measurement of the page: answers "would this rectangle cover the composer or a control?". */
+function measure(root: HTMLElement): (rect: DOMRect) => boolean {
+  const composers = composerBoxes().filter((box) => box.width > 0);
+  const controls: Array<{ readonly element: HTMLElement; readonly box: DOMRect }> = [];
   for (const element of document.querySelectorAll<HTMLElement>(INTERACTIVE)) {
     if (root.contains(element)) continue;
     const box = element.getBoundingClientRect();
     if (box.width === 0 || box.height === 0) continue;
-    const left = Math.max(box.left, rect.left);
-    const right = Math.min(box.right, rect.right);
-    const top = Math.max(box.top, rect.top);
-    const bottom = Math.min(box.bottom, rect.bottom);
-    if (left >= right || top >= bottom) continue;
-    // Clipped or covered controls do not count: look at what is really drawn there.
-    const drawn = document
-      .elementsFromPoint((left + right) / 2, (top + bottom) / 2)
-      .find((candidate) => !root.contains(candidate));
-    if (drawn && (drawn === element || element.contains(drawn) || drawn.contains(element))) return true;
+    if (box.bottom < 0 || box.top > window.innerHeight || box.right < 0 || box.left > window.innerWidth) continue;
+    controls.push({ element, box });
   }
-  return false;
+  return (rect) => {
+    if (composers.some((box) => overlaps(box, rect))) return true;
+    for (const { element, box } of controls) {
+      const left = Math.max(box.left, rect.left);
+      const right = Math.min(box.right, rect.right);
+      const top = Math.max(box.top, rect.top);
+      const bottom = Math.min(box.bottom, rect.bottom);
+      if (left >= right || top >= bottom) continue;
+      // Clipped or covered controls do not count: look at what is really drawn there.
+      const drawn = document
+        .elementsFromPoint((left + right) / 2, (top + bottom) / 2)
+        .find((candidate) => !root.contains(candidate));
+      if (drawn && (drawn === element || element.contains(drawn) || drawn.contains(element))) return true;
+    }
+    return false;
+  };
 }
 
 function relative(iso: string): string {
@@ -211,21 +243,32 @@ export function mountNotice(runtime: MockRuntime): void {
   let spot: Spot | null = null;
 
   const moveTo = (next: Spot) => {
-    root.dataset.spot = next;
-    Object.assign(root.style, SPOTS[next]);
+    Object.assign(root.style, {
+      left: next.x === "left" ? `${next.dx}px` : "",
+      right: next.x === "right" ? `${next.dx}px` : "",
+      top: next.y === "top" ? `${next.dy}px` : "",
+      bottom: next.y === "bottom" ? `${next.dy}px` : "",
+    });
   };
 
   const place = () => {
     if (card) return;
     // Measured synchronously, so the pill never paints at a spot it then leaves.
-    for (const candidate of ORDER) {
+    const covers = measure(root);
+    const options = candidates();
+    const current = spot;
+    const ordered = current ? [current, ...options.filter((option) => !sameSpot(option, current))] : options;
+    for (const candidate of ordered) {
       moveTo(candidate);
-      if (!coversControl(root, pill.getBoundingClientRect())) {
+      if (!covers(pill.getBoundingClientRect())) {
         spot = candidate;
+        root.dataset.spot = `${candidate.x}-${candidate.y}`;
         return;
       }
     }
-    spot = "edge";
+    // Nothing is free (never seen): stay labeled, just under the titlebar.
+    spot = options.find((option) => option.y === "top" && option.dy >= 58) ?? FIXED_SPOTS[1]!;
+    root.dataset.spot = "fallback";
     moveTo(spot);
   };
 
@@ -254,14 +297,8 @@ export function mountNotice(runtime: MockRuntime): void {
     const height = card.offsetHeight;
     const left = Math.min(Math.max(12, anchor.left), window.innerWidth - width - 12);
     const below = anchor.top < window.innerHeight / 2;
-    card.style.left = `${spot === "edge" ? anchor.right + 8 : left}px`;
-    card.style.top = `${
-      spot === "edge"
-        ? Math.min(anchor.top, window.innerHeight - height - 12)
-        : below
-          ? anchor.bottom + 8
-          : anchor.top - height - 8
-    }px`;
+    card.style.left = `${left}px`;
+    card.style.top = `${below ? anchor.bottom + 8 : anchor.top - height - 8}px`;
     document.addEventListener("pointerdown", onOutside, true);
     document.addEventListener("keydown", onKey, true);
   });
