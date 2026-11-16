@@ -44,6 +44,10 @@ const full = thread({
       assistant("Ready for a focused review: search responsiveness, stable selection, transactional indexing, Unicode export and repeatable imports are covered. Expand the **Worked for** rows to inspect commands and patches.\n\n**Still deferred:** archive memory measurement and a browser check on a low-memory device. No release claim until those are checked."),
     ] }),
   ],
+  // Hydration expands the client window, but detail reads must still see the retained source rows.
+  rpc: { "orchestration.getTurnItem": input => ({
+    item: full.projection.turnItems.find(i => i.id === input.itemId) ?? null,
+  }) },
   // History is an HTTP surface on this tip, not an RPC. Answer only this fixture's opaque cursor.
   onOpen: script([step("0ms", handle => {
     installHistory();
