@@ -59,6 +59,40 @@ function handoffItem(spec: HandoffSpec): ItemSpec {
   }));
 }
 
+const STRATEGY_LABELS: Record<Strategy, string> = {
+  full_thread_summary: "full thread summary",
+  delta_since_target_last_seen: "changes since the target last saw the thread",
+  fork_delta_summary: "fork delta summary",
+  checkpoint_summary: "checkpoint summary",
+  manual_context: "manual context",
+};
+
+/**
+ * The switch itself is only a small "A → B" note under the user's message, so the answer that
+ * follows says which strategy carried the context over and what it contained.
+ */
+function answerAfterHandoff(spec: HandoffSpec, text: string): ItemSpec {
+  return assistant(
+    `**Context handoff:** ${STRATEGY_LABELS[spec.strategy]}. ${spec.summary}\n\n${text}`,
+  );
+}
+
+/** The red row of a handoff that did not go through, with the reason. */
+function handoffFailure(spec: HandoffSpec): ItemSpec {
+  return item((base) => ({
+    ...base,
+    type: "error",
+    status: "failed",
+    title: "Context handoff failed",
+    failure: {
+      class: "provider_error",
+      message: `Strategy "${STRATEGY_LABELS[spec.strategy]}": ${spec.summary} The run did not start. Try a shorter summary or another strategy.`,
+      code: null,
+      retryable: true,
+    },
+  }));
+}
+
 function handoffRecord(spec: HandoffSpec): OrchestrationV2ContextHandoff {
   return {
     id: handoffIdOf(spec),
@@ -123,7 +157,7 @@ const one = thread({
       user: "Switching to Claude for the tricky part: handle partial fetch failures.",
       items: [
         handoffItem(oneHandoffs[0]!),
-        assistant("Return a result per source with its error, so `renderReport` can show the sections that loaded and mark the rest unavailable."),
+        answerAfterHandoff(oneHandoffs[0]!, "Return a result per source with its error, so `renderReport` can show the sections that loaded and mark the rest unavailable."),
       ],
     }),
     turn({
@@ -133,7 +167,7 @@ const one = thread({
       user: "Back to Codex to write it.",
       items: [
         handoffItem(oneHandoffs[1]!),
-        assistant("Written: `report/fetch.ts` returns `{ source, rows, error }[]` and `report/render.ts` renders unavailable sections with a notice."),
+        answerAfterHandoff(oneHandoffs[1]!, "Written: `report/fetch.ts` returns `{ source, rows, error }[]` and `report/render.ts` renders unavailable sections with a notice."),
       ],
     }),
   ],
@@ -172,14 +206,14 @@ const twoTurns: TurnSpec[] = [
     took: "40s",
     model: MODELS.terra,
     user: "Continue in a Codex model: rename the flag helper.",
-    items: [handoffItem(twoHandoffs[0]!), assistant("Renamed `isEnabled` to `hasFlag` in all four files.")],
+    items: [handoffItem(twoHandoffs[0]!), answerAfterHandoff(twoHandoffs[0]!, "Renamed `isEnabled` to `hasFlag` in all four files.")],
   }),
   turn({
     at: "20m",
     took: "40s",
     model: MODELS.sonnet,
     user: "Hand it to Sonnet to double check the rename.",
-    items: [handoffItem(twoHandoffs[1]!), assistant("The rename is complete and no call site still uses `isEnabled`.")],
+    items: [handoffItem(twoHandoffs[1]!), answerAfterHandoff(twoHandoffs[1]!, "The rename is complete and no call site still uses `isEnabled`.")],
   }),
   turn({
     at: "10m",
@@ -187,7 +221,7 @@ const twoTurns: TurnSpec[] = [
     status: "failed",
     model: MODELS.astra,
     user: "Now back to Astra with a manual summary.",
-    items: [handoffItem(twoHandoffs[2]!)],
+    items: [handoffItem(twoHandoffs[2]!), handoffFailure(twoHandoffs[2]!)],
   }),
 ];
 

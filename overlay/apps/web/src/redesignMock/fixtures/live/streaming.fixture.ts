@@ -16,7 +16,7 @@ import {
   thread,
   turn,
 } from "../../api";
-import { continueStreaming, printingCommand, streamParagraphs } from "./live-kit";
+import { continueStreaming, finishedCommand, printingCommand, streamParagraphs } from "./live-kit";
 
 const CACHE_REPLY =
   "The cache keys were built from the raw query string, so `?page=2&sort=name` and `?sort=name&page=2` landed in two different entries. I'm sorting the parameters before hashing them, which makes both URLs share one entry. After that I'll add a test that sends the same request with the parameters in a different order and checks that the second call is a cache hit.";
@@ -52,7 +52,7 @@ const streamingText = thread({
   onOpen: script(
     [
       ...continueStreaming("assistant_message", CACHE_REPLY, PREFIX_WORDS),
-      exec({ input: "vp test src/cache", output: " ✓ src/cache/keys.test.ts (6 tests) 88ms\n" }, "2.2s", "900ms"),
+      exec({ input: "vitest run src/cache", output: " ✓ src/cache/keys.test.ts (6 tests) 88ms\n" }, "2.2s", "900ms"),
     ],
     {
       loop: [
@@ -89,10 +89,17 @@ const reasoningStream = thread({
       ],
     }),
     turn({
-      at: "40s",
+      at: "90s",
+      took: "80s",
       status: "running",
       user: "Memory flat is the goal. Go ahead and think it through before you edit anything.",
       items: [
+        // A finished thought sits above the live one: the first reads "Thought", the last "Thinking".
+        reasoning("The writer already takes an async iterator, so the change belongs in the query helper, not in the writer."),
+        command({
+          input: "rg -n \"findAll|toArray\" src/export",
+          output: "src/export/query.ts:14:  const rows = await db.select().from(events).toArray();\nsrc/export/job.ts:31:  const rows = await loadRows(range);\n",
+        }),
         reasoning(THOUGHT.split(/(?<=\s)/).slice(0, 12).join(""), { streaming: true }),
       ],
     }),
@@ -101,7 +108,7 @@ const reasoningStream = thread({
     [
       ...continueStreaming("reasoning", THOUGHT, 12),
       ...say("I'll move the query to a cursor and write each page as it arrives. Starting with the query helper.", { after: "600ms" }),
-      hold({ input: "vp test src/export --watch", output: "watching 12 test files\n" }, "700ms"),
+      hold({ input: "vitest watch src/export", output: "watching 12 test files\n" }, "700ms"),
     ],
     {
       loop: [
@@ -135,13 +142,21 @@ const liveOutput = thread({
   scenario: { id: "L03", label: "Command running with live output", waitForText: "Run the whole test suite" },
   turns: [
     turn({
-      at: "90s",
+      at: "2m",
+      took: "100s",
       status: "running",
       user: "Run the whole test suite and tell me what fails.",
       items: [
-        reasoning("The suite takes a while, so I'll run it once and read the summary."),
+        reasoning("The suite takes a while, so I'll run the orders tests first and then everything."),
         command({
-          input: "vp test",
+          input: "vitest run src/orders",
+          output: " ✓ src/orders/list.test.ts (8 tests) 41ms\n ✓ src/orders/create.test.ts (11 tests) 63ms\n\n Test Files  2 passed (2)\n      Tests  19 passed (19)\n",
+        }),
+        assistant("The orders tests pass. Now the whole suite, which prints a line per file as it finishes.", {
+          phase: "commentary",
+        }),
+        command({
+          input: "vitest run",
           status: "running",
           output: `${TEST_LINES.slice(0, 3).join("\n")}\n`,
         }),
@@ -159,7 +174,7 @@ const liveOutput = thread({
     {
       loop: [
         ...printingCommand({
-          input: "vp test --changed",
+          input: "vitest run --changed",
           lines: TEST_LINES.slice(0, 6),
           every: "1.1s",
           after: "6s",
@@ -176,7 +191,7 @@ function stepAppend(lines: ReadonlyArray<string>, upTo: number, after: Span) {
       (candidate) =>
         candidate.runId === run.runId &&
         candidate.type === "command_execution" &&
-        candidate.input === "vp test" &&
+        candidate.input === "vitest run" &&
         (candidate.status === "running"),
     );
     if (!live) return;
@@ -206,25 +221,23 @@ const commandSucceeded = thread({
   turns: [
     turn({
       at: "2m",
+      took: "90s",
       status: "running",
       user: "Is lint clean? Then check the formatting too.",
       items: [
-        command({
-          input: "vp lint",
-          output: "Found 0 warnings and 0 errors.\nFinished in 412ms on 186 files.\n",
-          exitCode: 0,
-        }),
-        assistant("Lint is clean: 0 warnings and 0 errors across 186 files. Checking formatting next.", {
+        reasoning("Lint first, then the formatter. Both are quick on this repo."),
+        assistant("Running `eslint .` now. It exits 0 when nothing is wrong; click its row to see the output.", {
           phase: "commentary",
         }),
-        command({ input: "vp fmt --check", status: "running", output: "Checking formatting...\n" }),
+        finishedCommand({
+          input: "eslint .",
+          output: "Checked 186 files in 412ms.\nFound 0 warnings and 0 errors.\n",
+          exitCode: 0,
+          after: "9s",
+        }),
       ],
     }),
   ],
-  onOpen: afterCommand([
-    "Formatting is clean too. Nothing needed changing in either check.",
-    "I also ran the type check while I was at it; it passes with no errors.",
-  ]),
 });
 
 const commandFailed = thread({
@@ -235,28 +248,25 @@ const commandFailed = thread({
   turns: [
     turn({
       at: "3m",
+      took: "2m",
       status: "running",
       user: "Build the release bundle.",
       items: [
-        command({
-          input: "vp build --mode release",
+        reasoning("The release build uses the production config, so I'll build with that mode."),
+        assistant("Building with `vite build --mode release`. A failed build turns its row red; click it for the full output.", {
+          phase: "commentary",
+        }),
+        finishedCommand({
+          input: "vite build --mode release",
           status: "failed",
           exitCode: 2,
           output:
             "vite v6.0.3 building for production...\n✓ 412 modules transformed.\nerror during build:\nsrc/routes/checkout.tsx (18:9): \"formatMoney\" is not exported by \"src/lib/money.ts\"\n    at Module.error (rollup/dist/shared/rollup.js:213:15)\n",
+          after: "14s",
         }),
-        assistant(
-          "The build stopped with exit code 2: `checkout.tsx` imports `formatMoney`, but `money.ts` only exports `formatCurrency`. I'll add an alias export so both names work.",
-          { phase: "commentary", streaming: false },
-        ),
-        command({ input: "rg -n \"formatMoney|formatCurrency\" src", status: "running", output: "src/lib/money.ts:7:export function formatCurrency(" }),
       ],
     }),
   ],
-  onOpen: afterCommand([
-    "Added `export { formatCurrency as formatMoney }` to `money.ts`. Rebuilding to confirm the error is gone.",
-    "The release build now finishes in 14 seconds with no errors.",
-  ]),
 });
 
 const commandTests = thread({
@@ -271,7 +281,7 @@ const commandTests = thread({
       user: "Run the shipping tests.",
       items: [
         command({
-          input: "vp test src/shipping",
+          input: "vitest run src/shipping",
           status: "failed",
           exitCode: 1,
           output:
@@ -287,7 +297,7 @@ const commandTests = thread({
           deletions: 1,
           diff: "@@ -22,7 +22,10 @@ export function quote(weightKg: number, zone: Zone): Cents {\n-  return Math.round(base * surcharge);\n+  const total = base * surcharge;\n+  return zone.flatRate !== null && weightKg > zone.maxKg\n+    ? zone.flatRate\n+    : Math.round(total);\n",
         }),
-        command({ input: "vp test src/shipping", status: "running", output: " RUN  v2.4.1\n" }),
+        command({ input: "vitest run src/shipping", status: "running", output: " RUN  v2.4.1\n" }),
       ],
     }),
   ],

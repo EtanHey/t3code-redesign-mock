@@ -58,8 +58,8 @@ const records: SubagentSpec[] = wakes.map((wake, index) => ({
   status: wake.status,
   ...(wake.status === "running" ? { progress: "Scanned 1,900 of 2,400 files." } : { result: wake.result }),
   childId: `${WITH_CHILDREN}-${wake.key}`,
-  startedAgo: `${70 - index * 6}m`,
-  ranFor: "2m",
+  startedAgo: `${470 - index * 6}s`,
+  ranFor: "70s",
   model: MODELS.haiku,
 }));
 
@@ -109,8 +109,8 @@ const smallChildren = wakes.map((wake, index) =>
     model: MODELS.haiku,
     turns: [
       turn({
-        at: `${70 - index * 6}m`,
-        took: "2m",
+        at: `${470 - index * 6}s`,
+        took: "70s",
         status:
           wake.status === "completed"
             ? "completed"
@@ -136,7 +136,7 @@ const plainWakes = thread({
   scenario: {
     id: "X06b",
     label: "Wake notifications from commands, monitors and the system",
-    waitForText: "Command finished: vp build",
+    waitForText: "Command finished: vite build",
   },
   turns: [
     turn({
@@ -145,18 +145,18 @@ const plainWakes = thread({
       user: "Build in the background, watch the CI log, and tell me when anything changes.",
       items: [
         command({
-          input: "vp build --watch",
+          input: "vite build --watch",
           output: "built in 12.4s\n",
           extra: { completionWake: "always" },
         }),
-        notification({ kind: "command" }, "completed", "Command finished: vp build", "Exited with code 0 after 12.4s."),
-        notification({ kind: "command" }, "failed", "Command failed: vp test --run", "Exited with code 1. 3 tests failed."),
-        notification({ kind: "command" }, "cancelled", "Command stopped: vp dev", "Stopped by you."),
+        notification({ kind: "command" }, "completed", "Command finished: vite build", "Exited with code 0 after 12.4s."),
+        notification({ kind: "command" }, "failed", "Command failed: vitest run --run", "Exited with code 1. 3 tests failed."),
+        notification({ kind: "command" }, "cancelled", "Command stopped: vite dev", "Stopped by you."),
         notification({ kind: "monitor" }, "updated", "Monitor update: CI log", "Step 4 of 6 finished: integration tests."),
         notification({ kind: "monitor" }, "completed", "Monitor finished: CI log", "The pipeline passed in 6m 12s."),
         notification({ kind: "background_task" }, "unknown", "Background task ended", "The task ended without reporting a result."),
         notification({ kind: "system" }, "updated", "Provider session resumed", "The session was restarted and the conversation was restored."),
-        notification({ kind: "system" }, "failed", "Could not restore a background command", "`vp dev` was running before the restart and was not restarted."),
+        notification({ kind: "system" }, "failed", "Could not restore a background command", "`vite dev` was running before the restart and was not restarted."),
         assistant("That is every kind of wake: the build finished, the tests failed, the dev server was stopped, and the CI log changed twice."),
       ],
     }),

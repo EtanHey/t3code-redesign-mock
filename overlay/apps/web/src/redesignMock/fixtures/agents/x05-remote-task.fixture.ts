@@ -99,7 +99,7 @@ const receiving = thread({
       user: "Check that every link in docs/ still resolves and list the broken ones.",
       items: [
         command({
-          input: "vp run docs:links",
+          input: "pnpm run docs:links",
           output: "checked 212 links\nbroken: docs/guides/export.md -> /guides/csv (404)\n",
         }),
         assistant("One broken link: `docs/guides/export.md` points to `/guides/csv`, which was renamed to `/guides/export-csv`."),

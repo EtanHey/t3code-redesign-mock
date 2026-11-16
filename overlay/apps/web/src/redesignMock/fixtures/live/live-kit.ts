@@ -3,7 +3,7 @@
 // itself (the registry only picks up `*.fixture.ts`).
 import { MessageId, type OrchestrationV2TurnItem, type TurnItemId } from "@t3tools/contracts";
 
-import { now, step, type RunHandle, type ScriptStep, type Span } from "../../api";
+import { item, now, plus, step, type ItemSpec, type RunHandle, type ScriptStep, type Span } from "../../api";
 
 type StreamedType = "assistant_message" | "reasoning";
 
@@ -232,4 +232,44 @@ export function finishRun(run: RunHandle, status: "completed" | "failed" = "comp
       : []),
     { type: "run.updated" as const, payload: { ...current, status, completedAt: at } },
   ]);
+}
+
+/**
+ * A command that has already ended, even when it is the last item of a run that is still live
+ * (the planting code would otherwise leave the last item running). `after` is how long it ran.
+ */
+export function finishedCommand(options: {
+  readonly input: string;
+  readonly output: string;
+  readonly exitCode: number;
+  readonly status?: "completed" | "failed";
+  readonly after?: Span;
+}): ItemSpec {
+  return item((base) => ({
+    ...base,
+    status: options.status ?? (options.exitCode === 0 ? "completed" : "failed"),
+    completedAt: plus(base.startedAt, options.after ?? "5s"),
+    type: "command_execution",
+    input: options.input,
+    output: options.output,
+    exitCode: options.exitCode,
+  }));
+}
+
+/** Ends the command the run's plant left running, with its final output (a script step). */
+export function finishLiveCommand(output: string, after: Span = "4s", exitCode = 0): ScriptStep {
+  return step(after, (run) => {
+    const live = run.server
+      .projection(run.threadId)
+      ?.turnItems.findLast(
+        (candidate) =>
+          candidate.runId === run.runId && candidate.type === "command_execution" && candidate.status === "running",
+      );
+    if (!live) return;
+    run.complete(live.id, (current) =>
+      current.type === "command_execution"
+        ? { ...current, output, exitCode, status: exitCode === 0 ? "completed" : "failed" }
+        : current,
+    );
+  });
 }

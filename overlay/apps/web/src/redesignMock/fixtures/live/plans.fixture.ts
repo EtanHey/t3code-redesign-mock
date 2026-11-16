@@ -96,10 +96,11 @@ const todo = thread({
   id: THREAD_L06,
   project: "live",
   title: "Todo list: three of five steps done",
-  scenario: { id: "L06", label: "Todo list in progress", waitForText: "Verify the signature" },
+  scenario: { id: "L06", label: "Todo list in progress", waitForText: "Three of the five" },
   turns: [
     turn({
       at: "4m",
+      took: "3m",
       status: "running",
       user: "Reject webhook calls that are not signed. Keep a list so I can follow along.",
       items: [
@@ -107,12 +108,16 @@ const todo = thread({
         todoList(THREAD_L06, [
           todoStep(0, "completed"),
           todoStep(1, "completed"),
-          todoStep(2, "running", "40s"),
-          todoStep(3, "pending"),
+          todoStep(2, "completed"),
+          todoStep(3, "running", "40s"),
           todoStep(4, "pending"),
         ]),
+        assistant(
+          "Three of the five steps are done: I read the handler, wrote the failing tests and moved the signature check ahead of the body parsing. Next is the 401 response, then the docs. The list is in the Tasks bar above the message box.",
+          { phase: "commentary" },
+        ),
         command({
-          input: "vp test src/webhooks --watch",
+          input: "vitest watch src/webhooks",
           status: "running",
           output: " ✓ src/webhooks/verify.test.ts (4 tests) 18ms\n ❯ src/webhooks/handler.test.ts (3 tests | 2 failed)\n",
         }),
@@ -120,10 +125,10 @@ const todo = thread({
     }),
   ],
   onOpen: script(
-    [advanceTodo(3), advanceTodo(4), advanceTodo(5)],
+    [advanceTodo(4), advanceTodo(5)],
     {
       loop: printingCommand({
-        input: "vp test src/webhooks",
+        input: "vitest run src/webhooks",
         lines: [" ✓ src/webhooks/verify.test.ts (4 tests) 18ms", " ✓ src/webhooks/handler.test.ts (5 tests) 31ms"],
         every: "1s",
         after: "9s",
@@ -225,7 +230,7 @@ function streamPlanSteps(): ScriptStep[] {
 const planStreaming = thread({
   id: THREAD_L07,
   project: "live",
-  title: "Plan: streaming in, ends as Plan Ready",
+  title: "Plan: streaming in, then ready for review",
   scenario: { id: "L07", label: "Proposed plan streaming", waitForText: "signed tokens" },
   interactionMode: "plan",
   turns: [
@@ -247,8 +252,8 @@ const THREAD_L07B = "l07-plan-ready";
 const planReady = thread({
   id: THREAD_L07B,
   project: "live",
-  title: "Plan Ready: waiting for you to approve",
-  scenario: { id: "L07b", label: "Plan Ready", waitForText: "signed tokens" },
+  title: "Plan: ready, reply to approve it",
+  scenario: { id: "L07b", label: "Plan ready, waiting for your reply", waitForText: "signed tokens" },
   interactionMode: "plan",
   turns: [
     turn({
@@ -258,7 +263,7 @@ const planReady = thread({
       items: [
         reasoning("Reading how sessions are stored today before proposing anything."),
         proposedPlan(THREAD_L07B, PLAN_MARKDOWN, false),
-        assistant("The plan is ready. Approve it to start with step 1, or tell me what to change."),
+        assistant("The plan is ready. Reply \"go ahead\" and I will start with step 1, or tell me what to change first."),
       ],
     }),
   ],

@@ -103,7 +103,7 @@ const fileChanges = thread({
           diffStr: DELETED_FILE,
           changes: [{ operation: "delete", path: "src/lib/legacy-money.ts" }],
         })),
-        command({ input: "vp test src/billing", status: "running", output: " RUN  v2.4.1\n" }),
+        command({ input: "vitest run src/billing", status: "running", output: " RUN  v2.4.1\n" }),
       ],
     }),
   ],

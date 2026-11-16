@@ -118,11 +118,6 @@ const parent = thread({
   project: "agents",
   title: "Workflow run: dependency audit in three phases",
   model: MODELS.opus,
-  scenario: {
-    id: "X04",
-    label: "Workflow run with phases and agent totals",
-    waitForText: "Dependency audit across the monorepo",
-  },
   turns: [
     turn({
       at: "10m",
@@ -131,6 +126,7 @@ const parent = thread({
       user: "Audit our dependencies across the monorepo and tell me what is outdated or unmaintained.",
       items: [
         reasoning("Three phases: inventory every package, analyze each area, then write one report. A workflow keeps the fan-out under control."),
+        assistant("I started the dependency audit as a workflow. Open its row below, or the Lineage card on the right, to see every phase and agent.", { phase: "commentary" }),
         subagentRow(coordinator),
       ],
     }),
@@ -145,6 +141,20 @@ const coordinatorThread = childThread({
   title: coordinator.title,
   native: true,
   model: MODELS.opus,
+  // This is the thread X04 opens: its first message is the workflow's plan, shown with every phase
+  // and agent expanded. The parent thread (in the sidebar) carries the one-line row that leads here.
+  scenario: {
+    id: "X04",
+    label: "Workflow run with phases and agents",
+    waitForText: "Check auth dependencies",
+  },
+  // The opening block (phases, agents, the script folded below) needs the flag on the message too.
+  projection: (projection) => ({
+    ...projection,
+    messages: projection.messages.map((message) =>
+      message.role === "user" ? { ...message, workflowScript: true } : message,
+    ),
+  }),
   turns: [
     turn({
       at: "9m",
@@ -197,7 +207,7 @@ const authThread = childThread({
       user: "Flag outdated or unmaintained dependencies used by the auth code.",
       items: [
         command({
-          input: "vp info jsonwebtoken --json",
+          input: "npm info jsonwebtoken --json",
           status: "failed",
           output: "error: 429 Too Many Requests from the registry\n",
         }),
