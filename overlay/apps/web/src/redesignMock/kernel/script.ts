@@ -276,6 +276,34 @@ export function status(after: Span, value: OrchestrationV2Run["status"]): Script
   });
 }
 
+/** What happens once a run ends on its own: the reducer starts the next queued run. */
+let afterRunEnds: ((server: MockServer, threadId: ThreadId) => void) | null = null;
+export function onRunEnds(listener: (server: MockServer, threadId: ThreadId) => void): void {
+  afterRunEnds = listener;
+}
+
+/** Ends the run the way a finished provider turn does: run, attempt and provider turn settle. */
+export function endRun(handle: RunHandle, value: "completed" | "failed" = "completed"): void {
+  const run = handle.run();
+  const projection = handle.server.projection(handle.threadId);
+  if (!run || !projection || !LIVE_RUN.has(run.status)) return;
+  const at = now();
+  const events: ThreadEventInput[] = [];
+  const attempt = projection.attempts.find((candidate) => candidate.id === run.activeAttemptId);
+  const turn = projection.providerTurns.find((candidate) => candidate.runAttemptId === run.activeAttemptId);
+  if (attempt) events.push({ type: "run-attempt.updated", payload: { ...attempt, status: value, completedAt: at } });
+  if (turn) events.push({ type: "provider-turn.updated", payload: { ...turn, status: value, completedAt: at } });
+  events.push({ type: "run.updated", payload: { ...run, status: value, completedAt: at } });
+  handle.server.emit(handle.threadId, events);
+  cancelScript(handle.runId);
+  afterRunEnds?.(handle.server, handle.threadId);
+}
+
+/** A step that ends the run. */
+export function finish(after: Span = "300ms", value: "completed" | "failed" = "completed"): ScriptStep {
+  return step(after, (handle) => endRun(handle, value));
+}
+
 /** "Thinking" for a while, then "Thought". */
 export function think(text: string, duration: Span = "1.4s", after: Span = "300ms"): ScriptStep[] {
   const key = {};

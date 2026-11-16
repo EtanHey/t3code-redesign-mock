@@ -84,6 +84,17 @@ bubble; a first visit is seeded with `followUpBehavior: "queue"`, so Enter or Se
 queues and her ⌘/Ctrl-click steers. A running command row reads "Running <program>"
 (upstream's `commandProgramName`), so use commands a reader knows (`npm`, `git`, `pytest`).
 `/design-system` (her catalog, dev-only upstream) is on in this build.
+Provider commands sent as messages get the server's shape (`kernel/slashCommands.ts`): `/compact`
+runs one compaction that finishes with before/after tokens and ends the run (with Labs "fold each
+turn's work" off, her timeline shows its slash row and its working row, both "Compacting"; that is
+hers); `/goal` show/clear/pause/resume/set change the goal on the active provider thread, which is
+where the shell's `goal` comes from (a fixture's `shell.goal` is moved there at boot); `/review`,
+`/init`, `/context`, `/usage`, `/mcp`, `/feedback`, `/clear` answer briefly and end. A command
+never joins a running turn: it queues, except a goal command sent "now" that starts or ends goal
+work, which stops the run first. A guest send takes its text from the share and carries the guest
+attribution. "Retry" on a failed workspace preparation (`prepared-run.retry`) re-runs the setup
+the card streams (`kernel/preparedRun.ts`, live for every thread) and the agent starts; cancelling
+that setup fails the run again. "Edit from here" rolls later runs back (`rollbackToCheckpoint`).
 
 Unhandled RPCs never hang (silent stream, typed empty result, or a "not available" error). Add
 `?mockdebug` to any URL, or call `window.__MOCK__.unhandled()`, to see what a blank panel waits on.

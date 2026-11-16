@@ -29,7 +29,9 @@ import { now } from "./clock";
 import type { CommandOf } from "./definitions";
 import { withDefaultContextUsage } from "./defaults";
 import { emptyProjection } from "./dsl";
-import { alwaysWorking, cancelScript, runScript, type RunScript } from "./script";
+import { alwaysWorking, cancelScript, onRunEnds, runScript, type RunScript } from "./script";
+import { commandScriptFor, goalCommandOf, goalOf, isCommandMessage } from "./slashCommands";
+import { preparedRunFail, preparedRunRetry } from "./preparedRun";
 import type { MockServer, ThreadEventInput } from "./server";
 
 type UserMessageItem = Extract<OrchestrationV2TurnItem, { type: "user_message" }>;
@@ -79,9 +81,17 @@ function nextRunOrdinal(server: MockServer, threadId: ThreadId): number {
   return runs.reduce((max, run) => Math.max(max, run.ordinal), 0) + 1;
 }
 
-/** The script a new run in this thread follows: the fixture's, else the kernel's default. */
-function scriptFor(server: MockServer, threadId: ThreadId, text: string): RunScript {
-  return server.thread(threadId)?.definition?.script ?? alwaysWorking(text);
+/**
+ * The script a new run in this thread follows: a provider command's own short run (`/compact`,
+ * `/goal clear`...), else the fixture's, else the kernel's default.
+ */
+export function scriptFor(
+  server: MockServer,
+  threadId: ThreadId,
+  text: string,
+  attachments: ReadonlyArray<unknown> = [],
+): RunScript {
+  return commandScriptFor({ text, attachments }) ?? server.thread(threadId)?.definition?.script ?? alwaysWorking(text);
 }
 
 // Writing -----------------------------------------------------------------------------------------
@@ -235,7 +245,7 @@ export function startRun(server: MockServer, threadId: ThreadId, input: MessageI
     { type: "message.updated", payload: message },
     { type: "turn-item.updated", payload: rowOf(item, input) },
   ]);
-  runScript(server, threadId, run.id, scriptFor(server, threadId, input.text));
+  runScript(server, threadId, run.id, scriptFor(server, threadId, input.text, input.attachments));
   return run.id;
 }
 
@@ -291,7 +301,7 @@ function startQueued(server: MockServer, threadId: ThreadId, run: OrchestrationV
   }
   server.emit(threadId, events);
   renumberQueue(server, threadId, queuedRuns(server, threadId));
-  runScript(server, threadId, run.id, scriptFor(server, threadId, item?.text ?? ""));
+  runScript(server, threadId, run.id, scriptFor(server, threadId, item?.text ?? "", item?.attachments ?? []));
 }
 
 /** Stops a run: its script ends, open rows stop, open requests are cancelled. */
@@ -342,6 +352,9 @@ function startNextQueued(server: MockServer, threadId: ThreadId): void {
   const next = queuedRuns(server, threadId).find((run) => run.queueHeld !== true);
   if (next) startQueued(server, threadId, next);
 }
+
+// A run that ends on its own (a finished /compact, a goal control) hands over to the queue.
+onRunEnds(startNextQueued);
 
 /** `{ answers: [...] }` (a multi-select or attachment answer) is stored as its list, as the server does. */
 function storedAnswers(answers: Record<string, unknown>): Record<string, unknown> {
@@ -627,15 +640,87 @@ function deliveryMode(
   return "queue_after_active";
 }
 
+/** A goal command that starts or ends goal work stops a working run (CommandPolicy `goalCommandStopsActiveRun`). */
+function goalStopsActiveRun(server: MockServer, threadId: ThreadId, text: string): boolean {
+  const command = goalCommandOf({ text, attachments: [] });
+  if (command === null) return false;
+  const status = goalOf(server, threadId)?.status ?? null;
+  return command.type === "set" || command.type === "resume" || ((command.type === "clear" || command.type === "pause") && status === "active");
+}
+
+/**
+ * Sending a guest's message (`guestMessageId`): the server takes the text from the share, not the
+ * client, names the guest for the agent, attaches the guest attribution the client shows, and
+ * marks the share message sent in the same commit (Orchestrator `emitGuestMessageSent`,
+ * GuestShareDecider `decideGuestMessageSend`). A message that is no longer pending is refused.
+ */
+function guestInput(server: MockServer, command: CommandOf<"message.dispatch">, input: MessageInput): MessageInput | null {
+  if (command.guestMessageId === undefined) {
+    if (input.context?.guest === undefined) return input;
+    const { guest: _guest, ...context } = input.context;
+    return { ...input, context };
+  }
+  const projection = server.projection(command.threadId);
+  const share = projection?.thread.guestShare ?? null;
+  const message = share?.messages.find((candidate) => candidate.id === command.guestMessageId);
+  if (!projection || !share || message?.status !== "pending") return null;
+  const name = share.guestName ?? "Guest";
+  updateThread(server, command.threadId, "thread.guest-share-updated", (thread) => ({
+    ...thread,
+    guestShare: {
+      ...share,
+      messages: share.messages.map((candidate) => (candidate.id === message.id ? { ...candidate, status: "sent" } : candidate)),
+    },
+  }));
+  return {
+    ...input,
+    text: `Message from guest ${name}, sent by the owner:\n\n${message.text}`,
+    context: {
+      version: 1,
+      records: [],
+      guest: { guestMessageId: message.id, name, text: message.text, shareId: share.id },
+    },
+  };
+}
+
+/** A guest message whose queued send was cancelled shows as dismissed (`guestShareAfterCancelledSend`). */
+function dismissCancelledGuestSend(server: MockServer, threadId: ThreadId, messageId: MessageId): void {
+  const projection = server.projection(threadId);
+  const guest = projection?.messages.find((candidate) => candidate.id === messageId)?.context?.guest;
+  const share = projection?.thread.guestShare ?? null;
+  if (!guest || !share || share.id !== guest.shareId) return;
+  if (share.messages.find((candidate) => candidate.id === guest.guestMessageId)?.status !== "sent") return;
+  updateThread(server, threadId, "thread.guest-share-updated", (thread) => ({
+    ...thread,
+    guestShare: {
+      ...share,
+      messages: share.messages.map((candidate) =>
+        candidate.id === guest.guestMessageId ? { ...candidate, status: "dismissed" } : candidate,
+      ),
+    },
+  }));
+}
+
 function dispatchMessage(server: MockServer, command: CommandOf<"message.dispatch">): void {
   const { threadId } = command;
   if (!server.thread(threadId)) return;
-  const input = messageInput(command);
+  const input = guestInput(server, command, messageInput(command));
+  if (input === null) return;
   const active = activeRun(server, threadId);
-  const mode = deliveryMode(command, active);
+  let mode = deliveryMode(command, active);
   if (active === undefined) {
     startRun(server, threadId, input);
     return;
+  }
+  // A provider command is a turn of its own: it never joins a running turn. A goal command that
+  // starts or ends goal work stops the run when the send asked to go now; anything else queues.
+  if (isCommandMessage(input)) {
+    if (command.deliveryIntent !== undefined && goalStopsActiveRun(server, threadId, input.text)) {
+      interruptRun(server, threadId, active.id);
+      startRun(server, threadId, input);
+      return;
+    }
+    mode = "queue_after_active";
   }
   if (mode === "steer_active") {
     const { item, message } = userItem(server, threadId, active.id, input, "steer", "completed");
@@ -746,6 +831,43 @@ export function launchThread(
   };
 }
 
+/**
+ * "Edit from here" (`checkpoint.rollback`): the server records the request on the thread, then its
+ * rollback service rewinds the provider thread and marks every later run rolled back and every
+ * later checkpoint stale (CheckpointRollbackService). The client puts the prompt back in the
+ * composer. A checkpoint that is not ready cannot be restored.
+ */
+export function rollbackToCheckpoint(server: MockServer, command: CommandOf<"checkpoint.rollback">): void {
+  const projection = server.projection(command.threadId);
+  const checkpoint = projection?.checkpoints.find((candidate) => candidate.id === command.checkpointId);
+  if (!projection || !checkpoint || checkpoint.scopeId !== command.scopeId) return;
+  if (checkpoint.status !== "ready" && !(command.restoreFiles === false && checkpoint.status === "missing")) return;
+  const target = checkpoint.appRunOrdinal ?? 0;
+  for (const run of projection.runs) {
+    if (run.ordinal > target && LIVE.has(run.status)) interruptRun(server, command.threadId, run.id);
+  }
+  const current = server.projection(command.threadId)!;
+  const at = now();
+  const events: ThreadEventInput[] = [
+    { type: "thread.metadata-updated", payload: { ...current.thread, rollbackRequestId: command.commandId, rollbackFailure: null, updatedAt: at } },
+    { type: "checkpoint.rollback-requested", payload: { scopeId: command.scopeId, checkpointId: command.checkpointId, requestedAt: at } },
+  ];
+  for (const stale of current.checkpoints) {
+    if (stale.scopeId === checkpoint.scopeId && (stale.appRunOrdinal ?? 0) > target && stale.status !== "stale") {
+      events.push({ type: "checkpoint.captured", payload: { ...stale, status: "stale" } });
+    }
+  }
+  for (const run of current.runs) {
+    if (run.ordinal <= target || run.status === "rolled_back") continue;
+    if (run.status === "queued") continue;
+    events.push({ type: "run.updated", payload: { ...run, status: "rolled_back", completedAt: at } });
+    const node = current.nodes.find((candidate) => candidate.id === run.rootNodeId);
+    if (node) events.push({ type: "node.updated", payload: { ...node, status: "rolled_back", completedAt: at } });
+  }
+  server.clearRunStatePatch(command.threadId);
+  server.emit(command.threadId, events);
+}
+
 /** Applies one command. Returns false for command types the kernel does not model. */
 export function reduceCommand(server: MockServer, command: OrchestrationV2Command): boolean {
   const at = now();
@@ -781,6 +903,7 @@ export function reduceCommand(server: MockServer, command: OrchestrationV2Comman
     case "queued-run.cancel": {
       const run = queuedRuns(server, command.threadId).find((candidate) => candidate.id === command.runId);
       if (!run) return true;
+      dismissCancelledGuestSend(server, command.threadId, run.userMessageId);
       const item = userItemOf(server, command.threadId, run);
       server.emit(command.threadId, [
         { type: "run.updated", payload: { ...run, status: "cancelled", queuePosition: null, completedAt: at } },
@@ -1023,6 +1146,30 @@ export function reduceCommand(server: MockServer, command: OrchestrationV2Comman
         modelSelection: command.modelSelection,
         providerInstanceId: command.modelSelection.instanceId,
       }));
+      return true;
+    case "thread.guest-message.dismiss": {
+      const share = server.projection(command.threadId)?.thread.guestShare ?? null;
+      if (share?.messages.find((candidate) => candidate.id === command.guestMessageId)?.status !== "pending") return true;
+      updateThread(server, command.threadId, "thread.guest-share-updated", (thread) => ({
+        ...thread,
+        guestShare: {
+          ...share,
+          messages: share.messages.map((candidate) =>
+            candidate.id === command.guestMessageId ? { ...candidate, status: "dismissed" } : candidate,
+          ),
+        },
+      }));
+      return true;
+    }
+    case "thread.guest-share.close":
+      if (server.projection(command.threadId)?.thread.guestShare == null) return true;
+      updateThread(server, command.threadId, "thread.guest-share-updated", (thread) => ({ ...thread, guestShare: null }));
+      return true;
+    case "prepared-run.retry":
+      preparedRunRetry(server, command.threadId, command.runId);
+      return true;
+    case "prepared-run.fail":
+      preparedRunFail(server, command);
       return true;
     default:
       return false;

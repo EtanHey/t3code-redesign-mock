@@ -401,6 +401,197 @@ if (runInteraction) {
   }
 }
 
+// Provider commands, guest send, worktree retry, goal controls, and the notice --------------------
+
+const projectionOf = (page, threadId) =>
+  page.evaluate((id) => {
+    const p = window.__MOCK__.runtime.primary.server.projection(id);
+    const shell = window.__MOCK__.runtime.primary.server.shell(id);
+    return {
+      run: p.runs.at(-1)?.status ?? null,
+      runs: p.runs.map((run) => run.status),
+      goal: shell.goal?.status ?? null,
+      pendingGuests: shell.pendingGuestMessageCount,
+      guest: p.thread.guestShare?.messages.map((message) => message.status) ?? [],
+    };
+  }, threadId);
+const until = (page, threadId, test, what) =>
+  page
+    .waitForFunction(
+      ([id, source]) => {
+        const p = window.__MOCK__.runtime.primary.server.projection(id);
+        const shell = window.__MOCK__.runtime.primary.server.shell(id);
+        return new Function("p", "shell", `return (${source})`)(p, shell);
+      },
+      [threadId, test],
+      { timeout: 12_000 },
+    )
+    .catch(() => {
+      throw new Error(`expected ${what}`);
+    });
+const GOAL_BANNER = /^(Pursuing goal|Goal set|Goal paused|Goal blocked|Goal hit a usage limit|Goal reached its token budget|Goal complete)$/;
+const goalBanner = (page) => page.getByText(GOAL_BANNER);
+
+async function typeInto(page, view, text) {
+  const expand = page.getByRole("button", { name: "Expand composer" });
+  if (await expand.isVisible()) await (view.hasTouch ? expand.tap() : expand.click());
+  await page.locator('[contenteditable="true"]').last().click();
+  await page.keyboard.type(text);
+}
+
+async function flowCase(view, name, path, waitFor, body, setup) {
+  const context = await browser.newContext({ ...view, colorScheme: "dark" });
+  if (setup) await context.addInitScript(setup);
+  const page = await context.newPage();
+  const label = `flows ${view.name}: ${name}`;
+  watch(page, label);
+  const press = (locator) => (view.hasTouch ? locator.tap() : locator.click());
+  try {
+    await page.goto(origin + path);
+    await page.getByText(waitFor, { exact: false }).first().waitFor({ timeout: 20_000 });
+    await page.waitForTimeout(800);
+    await body(page, press);
+    await checkPage(page, label);
+    console.log(`  ✓ ${label}`);
+  } catch (error) {
+    fail(`${label}: ${error.message.split("\n")[0]}`);
+    await page.screenshot({ path: resolve(shots, `flows-${view.name}-${name.replace(/\W+/g, "-")}-failed.png`) }).catch(() => {});
+  }
+  await context.close();
+}
+
+// Labs "fold each turn's work" on: her working window, which folds a /compact run into one row.
+const LABS_FOLD = () => {
+  const key = "t3code:client-settings:v1";
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? "{}");
+    if (value.turnWorkFoldEnabled !== true) localStorage.setItem(key, JSON.stringify({ ...value, turnWorkFoldEnabled: true }));
+  } catch {}
+};
+
+if (runInteraction) {
+  console.log("smoke: flows (/compact, guest send, worktree retry, goal controls) at phone and desktop width");
+  const K01 = "k01-debounce-search";
+  const S07 = "s07";
+  const goalPaths = { active: "l14-goal-active", paused: "l14-goal-paused" };
+  for (const view of VIEWS) {
+    const compactCase = (fold) => async (page) => {
+      await typeInto(page, view, "/compact");
+      // The provider lists /compact, so the `/` menu offers it instead of "No matching command".
+      await need("/compact in the slash menu", page.getByRole("option", { name: /\/compact/ }).first());
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Enter");
+      await until(page, K01, 'p.turnItems.some((i) => i.type === "compaction" && i.status === "running")', "a running compaction");
+      const rows = await page.getByText(/^Compacting for/).count();
+      // Labs fold on: one row. Off (her default): her slash row plus her own working row, by design.
+      if (fold ? rows !== 1 : rows < 1 || rows > 2) throw new Error(`${rows} "Compacting" rows`);
+      await until(page, K01, 'p.runs.at(-1).status === "completed"', "the compaction run to finish");
+      await need("the finished compaction with token counts", page.getByText(/→ [\d.]+K tokens/).first());
+      if (await page.getByText(/^Compacting for/).count()) throw new Error("a Compacting row is still there");
+      if (await page.getByText("Nothing here is real", { exact: false }).count()) throw new Error("the generic scripted reply ran");
+      if (await page.getByRole("button", { name: "Stop generation" }).isVisible()) throw new Error("the thread is still working");
+    };
+    await flowCase(view, "/compact (Labs fold on)", `/redesign-preview/${K01}`, "180 ms", compactCase(true), LABS_FOLD);
+    await flowCase(view, "/compact (default settings)", `/redesign-preview/${K01}`, "180 ms", compactCase(false));
+
+    for (const order of [["Dismiss", "Send"], ["Send", "Dismiss"]]) {
+      await flowCase(view, `guest: ${order.join(" then ")}`, `/redesign-preview/${S07}`, "small-screen layout", async (page, press) => {
+        for (const verb of order) await press(page.getByRole("button", { name: new RegExp(`^${verb} message from`) }).first());
+        await until(page, S07, "shell.pendingGuestMessageCount === 0", "no pending guest message");
+        await need("the guest's text in a bubble", page.locator("[data-user-message-bubble]", { hasText: /compact menu keep|focus ring/ }).first());
+        await page.waitForTimeout(800);
+        if ((await emptyBubbles(page)) > 0) throw new Error("an empty user bubble appeared");
+        const state = await projectionOf(page, S07);
+        if (state.guest.filter((status) => status === "sent").length !== 1 || state.guest.filter((status) => status === "dismissed").length !== 1) {
+          throw new Error(`guest messages are ${state.guest.join(",")}`);
+        }
+        await need("the run working on it", page.getByRole("button", { name: "Stop generation" }));
+      });
+    }
+
+    for (const [id, threadId, which] of [
+      ["E07 banner Retry", "e07-worktree-not-created", 0],
+      ["E07 row Retry", "e07-worktree-not-created", -1],
+      ["E07b row Retry", "e07-setup-script-failed", -1],
+    ]) {
+      await flowCase(view, id, `/redesign-preview/${threadId}`, threadId.includes("setup") ? "export split" : "ledger rollup", async (page, press) => {
+        const retry = page.getByRole("button", { name: "Retry", exact: true });
+        await need("a Retry control", retry.first());
+        await press(which === 0 ? retry.first() : retry.last());
+        await until(page, threadId, 'p.runs.at(-1).status === "preparing"', "the run back to preparing");
+        if (threadId.includes("setup")) await need("the setup card running again", page.getByText(/^Running Install dependencies/).first());
+        await until(page, threadId, 'p.runs.at(-1).status === "running"', "the run working after setup");
+        await need("Stop while it works", page.getByRole("button", { name: "Stop generation" }));
+        if (await page.getByText(/^Failed Install dependencies/).count()) throw new Error("the old failed setup card is still shown");
+      });
+    }
+
+    await flowCase(view, "goal: Clear on an idle paused goal", `/redesign-preview/${goalPaths.paused}`, "Reach 90% coverage", async (page, press) => {
+      await need("the goal banner", goalBanner(page).first());
+      await press(page.getByRole("button", { name: "Clear", exact: true }).first());
+      await until(page, goalPaths.paused, "shell.goal === null", "the goal cleared");
+      await goalBanner(page).first().waitFor({ state: "hidden", timeout: 10_000 });
+      await need("the Goal cleared row", page.getByText("Goal cleared").first());
+    });
+    await flowCase(view, "goal: Clear while the goal is being pursued", `/redesign-preview/${goalPaths.active}`, "Reach 90% coverage", async (page, press) => {
+      await need("Pursuing goal", page.getByText("Pursuing goal").first());
+      await press(page.getByRole("button", { name: "Clear", exact: true }).first());
+      await until(page, goalPaths.active, "shell.goal === null", "the goal cleared");
+      await goalBanner(page).first().waitFor({ state: "hidden", timeout: 10_000 });
+    });
+    await flowCase(view, "goal: /goal clear queued, Stop, then Send now", `/redesign-preview/${goalPaths.active}`, "Reach 90% coverage", async (page, press) => {
+      await typeInto(page, view, "/goal clear");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Enter");
+      await need("the queued /goal clear", page.locator(".group\\/queued", { hasText: "/goal clear" }).first());
+      await press(page.getByRole("button", { name: "Stop generation" }));
+      await page.waitForTimeout(1_200);
+      await press(page.locator(".group\\/queued", { hasText: "/goal clear" }).getByRole("button", { name: /Send now/ }).first());
+      await until(page, goalPaths.active, "shell.goal === null", "the goal cleared");
+      await goalBanner(page).first().waitFor({ state: "hidden", timeout: 10_000 });
+    });
+  }
+
+  // The notice stays labeled and on top at every width, with one or two panes and a new tab.
+  console.log("smoke: notice at 320-1440 px, one and two panes");
+  for (const width of [320, 390, 640, 800, 900, 1000, 1440]) {
+    for (const path of ["/redesign-preview/k01-debounce-search", "/redesign-preview/p04-pull-requests"]) {
+      const context = await browser.newContext({ viewport: { width, height: Math.max(420, Math.round(width * 0.56)) }, colorScheme: "dark" });
+      const page = await context.newPage();
+      const label = `notice ${width}px ${path.split("/").pop()}`;
+      watch(page, label);
+      try {
+        await page.goto(origin + path);
+        await page.waitForFunction(() => window.__MOCK__ !== undefined, null, { timeout: 30_000 });
+        await page.waitForTimeout(1_800);
+        for (const step of ["open", "new tab"]) {
+          if (step === "new tab") {
+            const add = page.getByRole("button", { name: "New tab", exact: true }).first();
+            if (!(await add.isVisible().catch(() => false))) continue;
+            await add.click();
+            await page.waitForTimeout(1_200);
+          }
+          const seen = await page.evaluate(() => {
+            const pill = document.querySelector(".rdm-pill");
+            if (!pill) return "missing";
+            const box = pill.getBoundingClientRect();
+            if (box.width < 60 || box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight) return "off screen";
+            const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+            if (!hit || !pill.contains(hit)) return `covered by ${hit?.tagName}`;
+            return pill.textContent?.includes("Mock preview") ? "ok" : "unlabeled";
+          });
+          if (seen !== "ok") throw new Error(`${step}: the notice is ${seen}`);
+        }
+      } catch (error) {
+        fail(`${label}: ${error.message.split("\n")[0]}`);
+        await page.screenshot({ path: resolve(shots, `notice-${width}-failed.png`) }).catch(() => {});
+      }
+      await context.close();
+    }
+  }
+  console.log("  ✓ notice checked");
+}
+
 await browser.close();
 server.close();
 

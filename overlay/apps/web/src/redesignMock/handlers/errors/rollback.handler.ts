@@ -1,14 +1,18 @@
-// Rewinding a message dispatches `checkpoint.rollback`, which the kernel does not model. On the
-// "Rollback failed" thread this records the failure the way the server does (rollbackFailure on
-// the thread, tied to the command), so the app shows the error its rewind flow waits for. Every
-// other thread ignores the command.
+// Rewinding a message ("Edit from here") dispatches `checkpoint.rollback`. Every thread rewinds
+// the way the server's rollback service does (kernel `rollbackToCheckpoint`), except the
+// "Rollback failed" thread, which records the failure the way the server does (rollbackFailure on
+// the thread, tied to the command), so the app shows the error its rewind flow waits for.
 import type { OrchestrationV2AppThread } from "@t3tools/contracts";
 
 import { now, onCommand } from "~/redesignMock/api";
+import { rollbackToCheckpoint } from "~/redesignMock/kernel/reducer";
 import { ROLLBACK_FAILED_THREAD_ID } from "../../fixtures/errors/e06-checkpoints.fixture";
 
 export default onCommand("checkpoint.rollback", (command, { server }) => {
-  if (command.threadId !== ROLLBACK_FAILED_THREAD_ID) return;
+  if (command.threadId !== ROLLBACK_FAILED_THREAD_ID) {
+    rollbackToCheckpoint(server, command);
+    return;
+  }
   const projection = server.projection(command.threadId);
   if (!projection) return;
   const thread: OrchestrationV2AppThread = {

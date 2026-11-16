@@ -150,7 +150,9 @@ export function shellFromProjection(
     ),
     pendingBackgroundTasks: [],
     providerInstanceHistory: [],
-    goal: null,
+    // The server reads the goal from the thread's active provider thread (ProjectionStore).
+    goal:
+      projection.providerThreads.find((candidate) => candidate.id === thread.activeProviderThreadId)?.goal ?? null,
     itemCount: projection.turnItems.length,
     visibleItemCount: projection.visibleTurnItems.length,
     createdAt: thread.createdAt,

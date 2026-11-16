@@ -61,7 +61,19 @@ export const CODEX_PROVIDER = readyProvider(
     { slug: "gpt-6.1-terra", name: "GPT-6.1 Terra" },
     { slug: "gpt-6-luna", name: "GPT-6 Luna" },
   ],
-  { usageLimits: usageLimits(38, 61) },
+  {
+    // What Codex's provider snapshot advertises (apps/server CodexProvider).
+    slashCommands: [
+      { name: "compact", description: "Summarize the conversation and reduce context usage" },
+      {
+        name: "goal",
+        description: "Set a goal Codex keeps working toward until it is done",
+        input: { hint: "Objective, or pause, resume, clear" },
+      },
+      { name: "feedback", description: "Send this thread and Codex logs to OpenAI", input: { hint: "Describe the issue (optional)" } },
+    ],
+    usageLimits: usageLimits(38, 61),
+  },
 );
 
 export const CLAUDE_PROVIDER = readyProvider(
@@ -75,7 +87,17 @@ export const CLAUDE_PROVIDER = readyProvider(
     { slug: "claude-fable-5", name: "Claude Fable 5" },
   ],
   {
-    slashCommands: [{ name: "compact", description: "Summarize the conversation so far" }],
+    // Compact first (snapshotProbe COMPACT_SLASH_COMMAND), then what the Claude CLI lists at init.
+    slashCommands: [
+      { name: "compact", description: "Summarize the conversation and reduce context usage" },
+      { name: "goal", description: "Set a goal Claude keeps working toward", input: { hint: "Objective, or clear" } },
+      { name: "context", description: "Show current context usage" },
+      { name: "usage", description: "Show plan usage limits" },
+      { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation" },
+      { name: "review", description: "Review a pull request" },
+      { name: "security-review", description: "Complete a security review of the pending changes on the current branch" },
+      { name: "mcp", description: "Show MCP server status" },
+    ],
     usageLimits: usageLimits(22, 47),
   },
 );
@@ -101,6 +123,7 @@ export function baselineDefinitions(
     readonly updateSettings: AnyUnaryHandler;
     readonly answerSecret: AnyUnaryHandler;
     readonly answerLink: AnyUnaryHandler;
+    readonly cancelSetup: AnyUnaryHandler;
   },
 ): MockDefinition[] {
   const server = environment.server;
@@ -110,6 +133,7 @@ export function baselineDefinitions(
     commands.updateSettings,
     commands.answerSecret,
     commands.answerLink,
+    commands.cancelSetup,
     stream(ORCHESTRATION_V2_WS_METHODS.subscribeShell, () => server.subscribeShell()),
     stream(ORCHESTRATION_V2_WS_METHODS.subscribeThread, (input) => server.subscribeThread(input.threadId)),
     rpc(ORCHESTRATION_V2_WS_METHODS.getThreadProjection, (input) => {

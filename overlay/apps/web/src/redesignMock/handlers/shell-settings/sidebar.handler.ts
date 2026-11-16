@@ -48,52 +48,6 @@ export default [
       counts: counts(shells),
     };
   }),
-  onCommand("thread.guest-message.dismiss", (command, { server }) => {
-    const projection = server.projection(command.threadId);
-    const share = projection?.thread.guestShare;
-    if (!projection || !share) return;
-    server.emit(command.threadId, [
-      {
-        type: "thread.guest-share-updated",
-        payload: {
-          ...projection.thread,
-          guestShare: {
-            ...share,
-            messages: share.messages.map((message) =>
-              message.id === command.guestMessageId ? { ...message, status: "dismissed" } : message,
-            ),
-          },
-        },
-      },
-    ]);
-  }),
-  onCommand("thread.guest-share.close", (command, { server }) => {
-    const projection = server.projection(command.threadId);
-    if (projection)
-      server.emit(command.threadId, [
-        { type: "thread.guest-share-updated", payload: { ...projection.thread, guestShare: null } },
-      ]);
-  }),
-  onCommand("message.dispatch", (command, { server }) => {
-    if (!command.guestMessageId) return;
-    const projection = server.projection(command.threadId);
-    const share = projection?.thread.guestShare;
-    if (!projection || !share) return;
-    server.emit(command.threadId, [
-      {
-        type: "thread.guest-share-updated",
-        payload: {
-          ...projection.thread,
-          guestShare: {
-            ...share,
-            messages: share.messages.map((message) =>
-              message.id === command.guestMessageId ? { ...message, status: "sent" } : message,
-            ),
-          },
-        },
-      },
-    ]);
-  }),
   onCommand("thread.metadata.update", (command, { server }) => {
     if (!command.regenerateTitle) return;
     const projection = server.projection(command.threadId);

@@ -1,9 +1,9 @@
 // The setup card reads a snapshot stream per thread: the "setup script failed" thread (E07) and the
 // live lane's preparing thread (L08) have one; every other thread answers null (nothing to show).
 import { WS_METHODS, type WorktreeSetupSnapshot } from "@t3tools/contracts";
-import * as Stream from "effect/Stream";
 
 import { agoIso, stream } from "~/redesignMock/api";
+import { worktreeSetupStream } from "~/redesignMock/kernel/preparedRun";
 import { SETUP_FAILED_THREAD_ID } from "../../fixtures/errors/e07-workspace-prep.fixture";
 import { PREPARING_THREAD, preparingSnapshot } from "../live/worktree-setup.snapshot";
 
@@ -17,13 +17,16 @@ const done = (id: WorktreeSetupSnapshot["stages"][number]["id"], startedAgo: str
   tail: [],
 });
 
-export default stream(WS_METHODS.subscribeWorktreeSetup, (input) => {
-  if (input.threadId === PREPARING_THREAD) {
-    return Stream.concat(Stream.make(preparingSnapshot(input.threadId)), Stream.never);
-  }
-  if (input.threadId !== SETUP_FAILED_THREAD_ID) return Stream.concat(Stream.make(null), Stream.never);
+// The kernel serves the stream, so a setup the visitor re-runs with Retry reaches an open card.
+export default stream(WS_METHODS.subscribeWorktreeSetup, (input, context) =>
+  worktreeSetupStream(context.server, input.threadId, () => planted(input.threadId)),
+);
+
+function planted(threadId: WorktreeSetupSnapshot["threadId"]): WorktreeSetupSnapshot | null {
+  if (threadId === PREPARING_THREAD) return preparingSnapshot(threadId);
+  if (threadId !== SETUP_FAILED_THREAD_ID) return null;
   const snapshot: WorktreeSetupSnapshot = {
-    threadId: input.threadId,
+    threadId,
     phase: "failed",
     startedAt: agoIso("4m"),
     endedAt: agoIso("3m 20s"),
@@ -53,5 +56,5 @@ export default stream(WS_METHODS.subscribeWorktreeSetup, (input) => {
     error: "Setup script exited with code 1",
     sequence: 4,
   };
-  return Stream.concat(Stream.make(snapshot), Stream.never);
-});
+  return snapshot;
+}

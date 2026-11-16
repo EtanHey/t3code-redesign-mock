@@ -8,6 +8,7 @@ import {
   ProjectId,
   WS_METHODS,
   type EnvironmentId,
+  type OrchestrationV2ProviderGoal,
   type OrchestrationV2Run,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ import { redactCardAnswer, VisitorLog, type CardAnswer, type LogEntry } from "./
 import { launchThread, linkRecordCommand, recordCard, reduceCommand, secretRecordCommand } from "./reducer";
 import { buildRegistry, type Registry, type Sourced } from "./registry";
 import { runScript } from "./script";
+import { cancelSetupCommand } from "./preparedRun";
 
 export interface RedesignMockBuildInfo {
   readonly branch: string;
@@ -127,6 +129,22 @@ function replay(environments: ReadonlyMap<EnvironmentId, MockEnvironment>, entri
   return { replayed, failures };
 }
 
+/**
+ * A fixture's `shell.goal` becomes its active provider thread's goal, where the server keeps it,
+ * so `/goal clear`, pause and resume change what the banner reads.
+ */
+function withGoal(
+  projection: OrchestrationV2ThreadProjection,
+  goal: OrchestrationV2ProviderGoal | null | undefined,
+): OrchestrationV2ThreadProjection {
+  const activeId = projection.thread.activeProviderThreadId;
+  if (goal === undefined || activeId === null) return projection;
+  return {
+    ...projection,
+    providerThreads: projection.providerThreads.map((candidate) => (candidate.id === activeId ? { ...candidate, goal } : candidate)),
+  };
+}
+
 function boot(): MockRuntime {
   const registry = buildRegistry();
   const log = new VisitorLog(BUILD_INFO.fixtureVersion);
@@ -193,10 +211,11 @@ function boot(): MockRuntime {
       if (import.meta.env.DEV) throw new Error(message);
       console.error(message);
     }
-    const planted = fillScenarioIndex(withDefaultContextUsage(definition.projection), index);
+    const planted = withGoal(fillScenarioIndex(withDefaultContextUsage(definition.projection), index), definition.shell?.goal);
+    const { goal: _goal, ...shellPatch } = definition.shell ?? {};
     environment.server.addThread(planted, {
       definition,
-      ...(definition.shell ? { shellPatch: definition.shell } : {}),
+      ...(definition.shell ? { shellPatch } : {}),
       ...(definition.olderSettled ? { olderSettled: true } : {}),
     });
   }
@@ -227,12 +246,21 @@ function boot(): MockRuntime {
     };
     const answerSecret = rpc(WS_METHODS.secretsAnswerRequest, (input) => answerCard({ card: "secret", input }));
     const answerLink = rpc(WS_METHODS.peerLinksAnswerRequest, (input) => answerCard({ card: "link", input }));
+    // Cancelling a running setup: the server's worker fails the run (`prepared-run.fail`), which
+    // is logged and replayed like any command.
+    const cancelSetup = rpc(WS_METHODS.worktreeSetupCancel, (input) => {
+      const command = cancelSetupCommand(server, input.threadId);
+      if (command === null) return { cancelled: false };
+      log.append({ kind: "command", at: nowMs(), environmentId: environment.environmentId, command });
+      applyCommand(environment, command);
+      return { cancelled: true };
+    });
     const updateSettings = rpc(WS_METHODS.serverUpdateSettings, (input) => {
       log.append({ kind: "settings", at: nowMs(), environmentId: environment.environmentId, patch: input.patch });
       return environment.updateSettings(input.patch);
     });
     environment.install(
-      handlerMaps(baselineDefinitions(environment, { dispatch, launch, updateSettings, answerSecret, answerLink }), "redesignMock/kernel/baseline.ts"),
+      handlerMaps(baselineDefinitions(environment, { dispatch, launch, updateSettings, answerSecret, answerLink, cancelSetup }), "redesignMock/kernel/baseline.ts"),
       lanesFor(registry),
     );
     // A thread's onOpen script runs against its live run the first time it is opened.
