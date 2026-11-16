@@ -2,12 +2,14 @@
 // session talks to. Calls resolve in this order: a thread fixture's own answer, a lane handler,
 // the kernel baseline, then a fallback by shape that never hangs and is recorded for ?mockdebug.
 import {
+  AssetResource,
   AuthStandardClientScopes,
   ExecutionEnvironmentDescriptor,
   ORCHESTRATION_PROTOCOL_VERSION,
   ServerConfig,
   ServerSettings,
   ThreadId,
+  WS_METHODS,
   WsRpcGroup,
   type EnvironmentId,
   type ServerConfigStreamEvent,
@@ -25,6 +27,7 @@ import { APP_VERSION } from "~/branding";
 
 import { iso, now } from "./clock";
 import type { AnyCommandReaction, AnyStreamHandler, AnyUnaryHandler, HandlerContext } from "./definitions";
+import { MockAssets } from "./assets";
 import type { Sourced } from "./registry";
 import { liveStream, MockServer } from "./server";
 
@@ -90,6 +93,8 @@ export interface EnvironmentHandlers {
 
 export class MockEnvironment {
   readonly server: MockServer;
+  /** Content fixtures registered with `asset(...)` for this environment; set at boot. */
+  assets = new MockAssets([]);
   readonly descriptor: ExecutionEnvironmentDescriptor;
   providers: ServerProvider[];
   settings: ServerSettings;
@@ -212,6 +217,12 @@ export class MockEnvironment {
     const call = (method: string, input: unknown): unknown => {
       // The app hands every method its own input; dispatch here is by name, so inputs are
       // passed through to the handler registered for that same name.
+      // Content a fixture registered with asset(...) wins over every handler for that request.
+      if (method === WS_METHODS.assetsCreateUrl && typeof input === "object" && input !== null && "resource" in input) {
+        const resource = Schema.decodeUnknownOption(AssetResource)(input.resource);
+        const registered = resource._tag === "Some" ? this.assets.createUrl(resource.value) : undefined;
+        if (registered) return Effect.succeed(registered);
+      }
       const threadId = threadIdOf(input);
       if (threadId !== undefined) {
         const record = this.server.thread(ThreadId.make(threadId));

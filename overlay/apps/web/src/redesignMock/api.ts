@@ -12,14 +12,18 @@ export {
   type PlantedProjectKey,
 } from "./kernel/constants";
 export {
+  asset,
   environment,
   onCommand,
   provider,
   rpc,
   stream,
+  type AssetSpec,
+  type EnvironmentConnection,
   type HandlerContext,
   type MockDefinition,
   type ProjectDefinition,
+  type ScenarioFamily,
   type ScenarioMeta,
   type ThreadDefinition,
 } from "./kernel/definitions";

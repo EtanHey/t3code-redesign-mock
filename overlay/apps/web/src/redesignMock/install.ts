@@ -1,7 +1,11 @@
 // Runs before upstream's src/bootstrap.ts (injected into index.html by vite/redesignMock.ts):
 // boots the in-browser server, puts the network guard in place before router.load(), seeds the
-// client settings a first visit needs, and mounts the notice pill.
+// client settings a first visit needs and the saved connections for extra environments, and
+// mounts the notice pill.
+import type { ClientSettings } from "@t3tools/contracts";
+
 import { ENVIRONMENT_ID } from "./kernel/constants";
+import { seedConnectionCatalog } from "./kernel/catalog";
 import { mountDebugPanel, exposeDebugHandle } from "./kernel/debug";
 import { installNetworkGuard } from "./kernel/network";
 import { mountNotice } from "./kernel/notice";
@@ -10,11 +14,20 @@ import { START_HERE_THREAD_ID } from "./fixtures/kernel/start-here.fixture";
 
 const CLIENT_SETTINGS_KEY = "t3code:client-settings:v1";
 
+/**
+ * A first visit starts with renderers that are off by default but safe, so planted content shows
+ * as it would for someone who turned them on. Layout labs (Scrolling workspaces, the grouped
+ * "boring" sidebar) stay as she ships them.
+ */
+const SHOWCASE_SETTINGS: Partial<ClientSettings> = {
+  mathRenderingEnabled: true,
+};
+
 function seedClientSettings(): void {
   try {
     const raw = window.localStorage.getItem(CLIENT_SETTINGS_KEY);
-    const settings: Record<string, unknown> = raw ? JSON.parse(raw) : {};
-    if (typeof settings.onboardingCompletedAt !== "string") {
+    const settings: Record<string, unknown> = raw ? JSON.parse(raw) : { ...SHOWCASE_SETTINGS };
+    if (raw === null || typeof settings.onboardingCompletedAt !== "string") {
       settings.onboardingCompletedAt = new Date().toISOString();
       window.localStorage.setItem(CLIENT_SETTINGS_KEY, JSON.stringify(settings));
     }
@@ -39,3 +52,7 @@ const mount = () => {
 };
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount, { once: true });
 else mount();
+
+// Last, and awaited: the app reads its saved connections as it boots, and the build runs this
+// module before her bootstrap in one chunk, so her code starts once the catalog is written.
+await seedConnectionCatalog(runtime.registry.environments.map(({ definition }) => definition));

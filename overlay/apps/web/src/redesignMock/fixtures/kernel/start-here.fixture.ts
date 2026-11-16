@@ -7,16 +7,17 @@ export const START_HERE_THREAD_ID = ThreadId.make("start-here");
 
 const WELCOME = `This is an **unofficial, fully mocked preview** of T3 Code as it looks on Maria's redesign branch (\`maria/redesign/6-workspace-panes\`, PRs #28839 to #28845). The real interface runs in your browser against a fake server: there is no backend, no agent and no account, and nothing you type leaves this page.
 
-**Nothing here is real.** The projects, threads and replies are planted. Agents never finish: a message you send starts a run that keeps working until you press Stop.
+**Nothing here is real.** The threads and replies are planted. Agents never finish: a message you send starts a run that keeps working until you press Stop.
 
-Things to try:
+Things to try: send a message here or in any thread, then send another while it works to queue it, and press **Stop**. Start, pin, rename, snooze or settle threads; open **Settings** and the command palette.
 
-- Open the projects in the sidebar. Each one holds a family of states: conversation, live work, requests and questions, errors, subagents and workflows, git and pull requests, and sidebar states.
-- Send a message here or in any thread. While it works, send another to queue it, then press **Stop**.
-- Start a new thread, pin or rename one, snooze or settle another.
-- Open **Settings** and the command palette.
+## Every planted state
 
-What you do is saved in this browser only, so a reload keeps it and nobody else sees it. **Reset demo**, in the notice at the top right, brings back the planted state.`;
+The sidebar lists threads by recency, with the project as a small label above each title. To find a state, use this list; each link opens its thread.
+
+{{SCENARIO_INDEX}}
+
+What you do is saved in this browser only, so a reload keeps it and nobody else sees it. **Reset demo**, under the **Mock preview** notice, brings back the planted state. The preview rebuilds every hour from Maria's newest commit; its source is at [github.com/EtanHey/t3code-redesign-mock](https://github.com/EtanHey/t3code-redesign-mock).`;
 
 export default thread({
   id: START_HERE_THREAD_ID,

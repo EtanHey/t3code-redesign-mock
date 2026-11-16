@@ -5,6 +5,7 @@ import type {
   AnyCommandReaction,
   AnyStreamHandler,
   AnyUnaryHandler,
+  AssetDefinition,
   EnvironmentDefinition,
   MockDefinition,
   ProjectDefinition,
@@ -22,9 +23,16 @@ export interface Registry {
   readonly projects: ReadonlyArray<Sourced<ProjectDefinition>>;
   readonly providers: ReadonlyArray<Sourced<ProviderDefinition>>;
   readonly environments: ReadonlyArray<Sourced<EnvironmentDefinition>>;
+  readonly assets: ReadonlyArray<Sourced<AssetDefinition>>;
   readonly unary: ReadonlyMap<string, Sourced<AnyUnaryHandler>>;
   readonly streams: ReadonlyMap<string, Sourced<AnyStreamHandler>>;
   readonly reactions: ReadonlyMap<string, Sourced<AnyCommandReaction>>;
+}
+
+export function assetKey(definition: AssetDefinition): string {
+  if ("attachmentId" in definition) return `attachment "${definition.attachmentId}"`;
+  if ("path" in definition) return `path "${definition.path}"`;
+  return `tool output "${definition.itemId}#${definition.index ?? 0}"`;
 }
 
 export function conflictError(what: string, first: string, second: string): Error {
@@ -66,6 +74,7 @@ export function buildRegistry(
   const projects = new Map<string, Sourced<ProjectDefinition>>();
   const providers = new Map<string, Sourced<ProviderDefinition>>();
   const environments = new Map<string, Sourced<EnvironmentDefinition>>();
+  const assets = new Map<string, Sourced<AssetDefinition>>();
   const unary = new Map<string, Sourced<AnyUnaryHandler>>();
   const streams = new Map<string, Sourced<AnyStreamHandler>>();
   const reactions = new Map<string, Sourced<AnyCommandReaction>>();
@@ -104,6 +113,11 @@ export function buildRegistry(
           definition,
         });
         break;
+      case "asset": {
+        const key = assetKey(definition);
+        claim(assets, `${definition.environmentId ?? ""}/${key}`, `asset ${key}`, { source, definition });
+        break;
+      }
       case "rpc":
         if (streams.has(definition.method)) {
           throw conflictError(`RPC "${definition.method}"`, streams.get(definition.method)!.source, source);
@@ -127,6 +141,7 @@ export function buildRegistry(
     projects: [...projects.values()],
     providers: [...providers.values()],
     environments: [...environments.values()],
+    assets: [...assets.values()],
     unary,
     streams,
     reactions,

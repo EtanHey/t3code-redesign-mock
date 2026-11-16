@@ -28,7 +28,21 @@ export interface ScenarioMeta {
   readonly label: string;
   /** Text the smoke run waits for before it takes the screenshot. */
   readonly waitForText?: string;
+  /** The "Start here" index heading it goes under. Default: from the fixture's directory. */
+  readonly family?: ScenarioFamily;
+  /** One short line shown after the link in the "Start here" index. */
+  readonly blurb?: string;
 }
+
+export type ScenarioFamily =
+  | "conversation"
+  | "live"
+  | "requests"
+  | "errors"
+  | "agents"
+  | "git"
+  | "panes"
+  | "sidebar";
 
 export interface ThreadDefinition {
   readonly kind: "thread";
@@ -71,6 +85,56 @@ export interface EnvironmentDefinition {
   readonly kind: "environment";
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  /** How the app sees its connection. Default `{ state: "connected" }`. */
+  readonly connection?: EnvironmentConnection;
+  /** Projects on this environment; a thread names one with `project: ProjectId.make(id)`. */
+  readonly projects?: ReadonlyArray<EnvironmentProject>;
+}
+
+export interface EnvironmentProject {
+  readonly id: string;
+  /** The repository's directory name; the workspace root is `/workspace/<title>`. */
+  readonly title: string;
+}
+
+/**
+ * A saved environment's connection as the app shows it. `failed` carries the diagnosis the app
+ * prints; `awaiting-approval` is a remote that has not approved this browser yet.
+ */
+export type EnvironmentConnection =
+  | { readonly state: "connected" }
+  | { readonly state: "reconnecting" }
+  | { readonly state: "failed"; readonly message: string }
+  | { readonly state: "awaiting-approval" };
+
+/** Which asset request a registered file answers. */
+export type AssetMatch =
+  /** `{ _tag: "attachment", attachmentId }`: message attachments, html_render pages, MCP apps. */
+  | { readonly attachmentId: string }
+  /** Workspace and media files (viewed images, markdown images, file previews), by path or path suffix. */
+  | { readonly path: string }
+  /** `{ _tag: "tool-output-image", itemId, index }`: images a tool returned. */
+  | { readonly itemId: string; readonly index?: number };
+
+export type AssetSpec = AssetMatch & AssetContent;
+export type AssetDefinition = AssetSpec & { readonly kind: "asset" };
+
+export interface AssetContent {
+  readonly environmentId?: EnvironmentId;
+  /** The served type, such as `"image/png"`, `"text/html"`, `"text/csv"`, `"text/markdown"`. */
+  readonly contentType: string;
+  /**
+   * Text content (HTML, CSV, markdown, plain text), served from a `blob:` URL: for attachments,
+   * html_render pages and MCP apps. Not for `path` assets, whose previews add a query string.
+   */
+  readonly text?: string;
+  /** A bundled file (`import shot from "./shot.png"`): a real static file, safe everywhere. */
+  readonly url?: string;
+  /** `"html-render"` adds the bootstrap html_render pages carry (height, theme, links). */
+  readonly serveAs?: "html-render";
+  /** Pixel size, for images; the app uses it to reserve space before the image loads. */
+  readonly width?: number;
+  readonly height?: number;
 }
 
 export interface HandlerContext {
@@ -130,6 +194,7 @@ export type MockDefinition =
   | ProjectDefinition
   | ProviderDefinition
   | EnvironmentDefinition
+  | AssetDefinition
   | AnyUnaryHandler
   | AnyStreamHandler
   | AnyCommandReaction;
@@ -165,6 +230,32 @@ export function provider(
   return { kind: "provider", provider: value, ...(environmentId ? { environmentId } : {}) };
 }
 
-export function environment(environmentId: EnvironmentId, label: string): EnvironmentDefinition {
-  return { kind: "environment", environmentId, label };
+/** Another environment, listed beside the primary one with its own projects and threads. */
+export function environment(
+  environmentId: EnvironmentId,
+  label: string,
+  options: {
+    readonly connection?: EnvironmentConnection;
+    readonly projects?: ReadonlyArray<EnvironmentProject>;
+  } = {},
+): EnvironmentDefinition {
+  return {
+    kind: "environment",
+    environmentId,
+    label,
+    ...(options.connection ? { connection: options.connection } : {}),
+    ...(options.projects ? { projects: options.projects } : {}),
+  };
+}
+
+/** Registers bundled content the app's own asset requests are answered with. */
+export function asset(spec: AssetSpec): AssetDefinition {
+  if ((spec.text === undefined) === (spec.url === undefined)) {
+    throw new Error("redesign-mock: asset() takes exactly one of `text` or `url`");
+  }
+  // File previews add `?revision=...` to the URL, which a blob: URL cannot carry.
+  if ("path" in spec && spec.url === undefined) {
+    throw new Error(`redesign-mock: asset({ path: "${spec.path}" }) needs a bundled file as \`url\``);
+  }
+  return { kind: "asset", ...spec };
 }
