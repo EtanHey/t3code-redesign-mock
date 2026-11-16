@@ -1,6 +1,8 @@
 // E09: providers that are not simply ready. The kernel's Codex and Claude stay untouched; these are
 // added beside them, one per state, so Settings > Providers and the model picker show the whole
 // range, and one thread per state selects its provider so the composer banner shows.
+// Pi is planted disabled for Settings > Providers only: a thread cannot select a disabled provider
+// and the app shows nothing about it in a chat, so there is no thread for that state.
 import { ProviderDriverKind, ProviderInstanceId, type ModelSelection, type ServerProvider } from "@t3tools/contracts";
 
 import { agoIso, assistant, provider, thread, turn } from "../../api";
@@ -175,11 +177,11 @@ const STATES: ReadonlyArray<StateSpec> = [
   {
     id: "e09-no-models",
     scenario: "E09d",
-    title: "Provider with no models: Kiro",
+    title: "Provider with no models: the picker shows \"default\"",
     provider: KIRO,
     model: "kiro-default",
     prompt: "What does the nightly reconciliation job do?",
-    answer: "It compares settled payouts against the ledger and writes any mismatch to `reconciliation_issues` for review.",
+    answer: "It compares settled payouts against the ledger and writes any mismatch to `reconciliation_issues` for review.\n\nKiro reported no models, so the model picker in the composer footer reads **default** instead of a model name. Settings > Providers lists the same provider with an empty model list.",
     waitForText: "reconciliation job",
   },
   {
@@ -201,16 +203,6 @@ const STATES: ReadonlyArray<StateSpec> = [
     prompt: "Where is the tax rate table loaded from?",
     answer: "`src/tax/rates.ts` loads it from `config/tax-rates.json` at startup and caches it for the process lifetime.",
     waitForText: "tax rate table",
-  },
-  {
-    id: "e09-disabled",
-    scenario: "E09g",
-    title: "Provider disabled: Pi is turned off",
-    provider: PI,
-    model: "pi-large",
-    prompt: "Summarize the changelog for the last release.",
-    answer: "Release 2.7.0 fixed proration rounding, added the ledger invoice index, and bumped the test runner.",
-    waitForText: "changelog for the last release",
   },
 ];
 

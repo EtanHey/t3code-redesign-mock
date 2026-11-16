@@ -3,11 +3,13 @@ import {
   PullRequestDiffInput,
   WS_METHODS,
   type PullRequestActivity,
+  type PullRequestListInput,
   type PullRequestDetail,
   type PullRequestFilesViewedResult,
   type PullRequestReviewGuideResult,
 } from "@t3tools/contracts";
 import { parsePullRequestQuery } from "@t3tools/client-runtime/pull-request-query";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { MODELS, rpc, stream } from "~/redesignMock/api";
@@ -123,8 +125,9 @@ const routingIdentity = {
   provider: SourceControlProviderKind.make("github"),
   viewer: author.login,
 };
-export default [
-  rpc(WS_METHODS.pullRequestsList, (input) => {
+const BURST_MS = 120;
+const bursts = new Map<string, { size: number }>();
+function listPullRequests(input: PullRequestListInput, hidden: boolean) {
     installDiffEndpoint();
     const query = parsePullRequestQuery(input.query ?? "");
     const filters = { ...input.filters, ...query.filters };
@@ -185,11 +188,27 @@ export default [
           detail: null,
         },
       ],
-      entries: list,
+      entries: hidden ? [] : list,
       errors: [],
       truncated: false,
       nextCursors: {},
     };
+  }
+export default [
+  rpc(WS_METHODS.pullRequestsList, (input) => {
+    // The page asks every connected environment the same question at once, and a handler cannot
+    // tell which one is asking. orbit-dashboard lives on this machine only, so of a burst of
+    // identical queries only the last, this machine's, gets the list.
+    const key = JSON.stringify(input);
+    const burst = bursts.get(key) ?? { size: 0 };
+    const index = burst.size++;
+    if (index === 0) {
+      bursts.set(key, burst);
+      setTimeout(() => bursts.delete(key), BURST_MS * 2);
+    }
+    return Effect.promise(
+      () => new Promise<void>((resolve) => setTimeout(resolve, BURST_MS)),
+    ).pipe(Effect.map(() => listPullRequests(input, index !== burst.size - 1)));
   }),
   rpc(WS_METHODS.pullRequestsListStats, (input) => ({
     stats: input.refs.map((ref) => {

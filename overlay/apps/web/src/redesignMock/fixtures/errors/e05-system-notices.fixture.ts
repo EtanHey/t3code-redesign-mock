@@ -5,7 +5,7 @@ import { noticeItem } from "./errors-kit";
 export default thread({
   id: "e05-system-notices",
   project: "errors",
-  title: "System notices: info, warning and error",
+  title: "System notices: info and warning rows",
   scenario: { id: "E05", label: "System notices", waitForText: "payout schedule" },
   turns: [
     turn({
@@ -18,7 +18,7 @@ export default thread({
         noticeItem("warning", "Approaching the 5-hour usage window: 85% used."),
         assistant("Staging matches the calendar except the monthly run, which fires at 06:00 instead of 09:00 UTC. I couldn't load your project instructions, so I'm following the repo's defaults.", { phase: "commentary" }),
         noticeItem("error", "Could not read AGENTS.md: permission denied. Continuing without project instructions."),
-        assistant("The drift is in `jobs/payouts.cron.ts`: the monthly entry uses the old hour. Change `0 6 1 * *` to `0 9 1 * *` and the schedule agrees with the calendar."),
+        assistant("The drift is in `jobs/payouts.cron.ts`: the monthly entry uses the old hour. Change `0 6 1 * *` to `0 9 1 * *` and the schedule agrees with the calendar.\n\nThe app draws the warning and error notices above the same way, with an amber mark; only the info notice is plain."),
       ],
     }),
   ],

@@ -9,6 +9,7 @@ import {
   oldSummary,
   summaryPatch,
   testPatch,
+  truncatedPatch,
   whitespacePatch,
 } from "../../fixtures/git-panels/data";
 
@@ -30,17 +31,9 @@ function workspace(cwd: string, { server }: HandlerContext) {
     }
   }
   const slug = cwd.split("/").at(-1) ?? "";
-  const pr =
-    entries.find((entry) => entry.headBranch.endsWith(`/${slug}`)) ??
-    (slug.startsWith("g05-")
-      ? entries.find((e) => e.number === 105)
-      : slug === "g04-stack"
-        ? entries.find((e) => e.number === 108)
-        : slug === "p04-list"
-          ? entries[0]
-          : undefined);
-  const large = slug === "p03-large-diff";
-  const truncated = slug === "p03-truncated-diff";
+  const pr = entries.find((entry) => entry.headBranch.endsWith(`/${slug}`));
+  const large = slug === "activity-samples";
+  const truncated = slug === "import-history";
   const ours = cwd.startsWith("/workspace/orbit-dashboard/");
   const panes = branch === "feature/region-table";
   const change = pr ? changeFor(pr.number) : undefined;
@@ -52,7 +45,7 @@ function workspace(cwd: string, { server }: HandlerContext) {
           : []),
       ]
     : large || truncated
-      ? Array.from({ length: truncated ? 1 : 24 }, (_, index) => ({
+      ? Array.from({ length: 24 }, (_, index) => ({
           path: `data/activity-${index + 1}.ts`,
           insertions: 50,
           deletions: 0,
@@ -66,7 +59,7 @@ function workspace(cwd: string, { server }: HandlerContext) {
             { path: "src/summary.test.ts", insertions: 5, deletions: 0, status: "added" as const },
           ]
         : [...changes.values()];
-  if (slug === "p03-whitespace")
+  if (slug === "summary-format")
     files.push({ path: "src/theme.ts", insertions: 1, deletions: 1, status: "modified" });
   return {
     pr,
@@ -172,9 +165,8 @@ export default [
         ? largePatch
         : summaryPatch +
           testPatch +
-          (w.slug === "p03-whitespace" && !input.ignoreWhitespace ? whitespacePatch : "");
-    if (w.truncated)
-      patch = largePatch.slice(0, largePatch.indexOf("diff --git", 100)) + "\n\n[truncated]";
+          (w.slug === "summary-format" && !input.ignoreWhitespace ? whitespacePatch : "");
+    if (w.truncated) patch = truncatedPatch;
     if (input.file)
       patch = patch
         .split(/(?=diff --git )/)

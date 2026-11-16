@@ -1,16 +1,10 @@
-// E01: a run that ends in a provider error. The error text is the provider's own JSON, which the
-// banner unwraps to its message while the details popover keeps the full text.
+// E01: a run that ends in a provider error, shown as the clean message in the timeline and the banner.
 import { assistant, command, fileChange, thread, turn } from "../../api";
 import { failureItem } from "./errors-kit";
 
-const PROVIDER_JSON = JSON.stringify({
-  error: {
-    message: "The server had an error while processing your request. Please try again later.",
-    type: "server_error",
-    code: "upstream_unavailable",
-    request_id: "req_8f3a2c19d7e4",
-  },
-});
+// The item carries the provider's message already unwrapped from its JSON error body (the
+// timeline prints `failure.message` as is): the request id lives in the details, not the text.
+const PROVIDER_MESSAGE = "The server had an error while processing your request. Please try again later.";
 
 export default thread({
   id: "e01-run-failed",
@@ -50,7 +44,7 @@ export default thread({
         }),
         failureItem({
           class: "provider_error",
-          message: PROVIDER_JSON,
+          message: PROVIDER_MESSAGE,
           code: "upstream_unavailable",
           retryable: true,
         }),

@@ -47,6 +47,9 @@ export const largePatch = Array.from({ length: 24 }, (_, file) => {
   ).join("\n");
   return `diff --git a/data/activity-${file + 1}.ts b/data/activity-${file + 1}.ts\nnew file mode 100644\n--- /dev/null\n+++ b/data/activity-${file + 1}.ts\n@@ -0,0 +1,50 @@\n+export const activity = [\n${lines}\n+];\n`;
 }).join("");
+// What the server returns when a diff passes its size limit: whole files up to the cut, then this.
+export const TRUNCATED_MARKER = "\n\n[truncated]";
+export const truncatedPatch = largePatch.split(/(?=diff --git )/).slice(0, 6).join("") + TRUNCATED_MARKER;
 export const whitespacePatch = `diff --git a/src/theme.ts b/src/theme.ts\n--- a/src/theme.ts\n+++ b/src/theme.ts\n@@ -1 +1 @@\n-export const gap =  8;\n+export const gap = 8;\n`;
 export const rows: ReadonlyArray<{
   id: string;
@@ -127,6 +130,18 @@ export const rows: ReadonlyArray<{
     rebase: true,
   },
 ];
+/** Each pull request's branch; its worktree is the branch's tail under /workspace/orbit-dashboard. */
+export const branchOf: Readonly<Record<number, string>> = {
+  101: "feature/activity-overview",
+  102: "feature/compact-activity-cards",
+  103: "feature/filters-in-url",
+  104: "feature/activity-table",
+  105: "feature/empty-activity-window",
+  106: "feature/daily-activity-cache",
+  107: "feature/rename-activity-queries",
+  108: "feature/activity-pagination",
+};
+export const worktreeOf = (branch: string) => `/workspace/orbit-dashboard/${branch.split("/")[1]}`;
 export const entries: PullRequestListEntry[] = rows.map((row, index) => ({
   provider: SourceControlProviderKind.make("github"),
   host: "github.com",
@@ -137,7 +152,7 @@ export const entries: PullRequestListEntry[] = rows.map((row, index) => ({
   title: row.title,
   url: `https://github.com/${repository}/pull/${row.number}`,
   author: index % 2 ? reviewer : author,
-  headBranch: `feature/${row.id.toLowerCase()}`,
+  headBranch: branchOf[row.number]!,
   baseBranch: "main",
   state: row.state,
   isDraft: row.draft ?? false,
@@ -223,7 +238,7 @@ export function detailFor(number: number): PullRequestDetail {
   const e = getEntry(number);
   return {
     ...e,
-    workspaceRoot: `/workspace/orbit-dashboard/${e.headBranch.split("/")[1]}`,
+    workspaceRoot: worktreeOf(e.headBranch),
     changedFiles: number === 101 ? 2 : 1,
     body: `## Summary\n\n${e.title}. The overview now explains recent activity without hiding the empty state.\n\n## Validation\n\n- Keyboard navigation through the filter bar\n- Empty, loading and populated activity windows\n- Unit tests for the summary limits\n\n![Overview with recent activity](${new URL(attachment, window.location.origin).href})\n`,
     capabilities: {

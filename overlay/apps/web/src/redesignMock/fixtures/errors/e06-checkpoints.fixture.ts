@@ -1,4 +1,5 @@
-// E06: checkpoints that did not come out ready, and a rollback that failed. Each thread has an
+// E06: a checkpoint that failed (its next message loses "Edit from here"), and a rollback that failed.
+// The stale and missing states look the same to a visitor and are not planted. Each thread has an
 // earlier run with a ready checkpoint, a middle one whose checkpoint is in the state under test, and
 // a last one after it. "Edit from here" on a message rewinds to the checkpoint of the run before
 // it, so the last message offers it only when the middle checkpoint is ready or missing.
@@ -39,7 +40,11 @@ function threeRuns(slug: string, second: "missing" | "error" | "stale" | "ready"
             diff: "--- a/src/ledger/rollup.test.ts\n+++ b/src/ledger/rollup.test.ts\n@@ -1,3 +1,8 @@\n+it(\"reports zero days for an empty ledger\", () => {\n+  expect(rollup([]).days).toBe(0);\n+});\n",
           }),
           command({ input: "pnpm vitest run src/ledger/rollup.test.ts", output: " ✓ src/ledger/rollup.test.ts (4 tests) 12ms\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)" }),
-          assistant(second === "ready" ? "Added four tests; they pass." : "Added four tests; they pass. The checkpoint for this run could not be captured cleanly."),
+          assistant(
+            second === "ready"
+              ? "Added four tests; they pass."
+              : "Added four tests; they pass. The checkpoint for this run could not be captured, so there is nothing to restore to.",
+          ),
         ],
       }),
       turn({
@@ -53,7 +58,11 @@ function threeRuns(slug: string, second: "missing" | "error" | "stale" | "ready"
             deletions: 0,
             diff: "--- a/docs/ledger.md\n+++ b/docs/ledger.md\n@@ -20,3 +20,9 @@\n+## Per-day rollup\n+\n+`rollup()` also reports `days`, the number of distinct UTC days with entries.\n",
           }),
-          assistant("Added a short \"Per-day rollup\" section to `docs/ledger.md`."),
+          assistant(
+            second === "ready"
+              ? "Added a short \"Per-day rollup\" section to `docs/ledger.md`."
+              : "Added a short \"Per-day rollup\" section to `docs/ledger.md`. Hover your three messages: only the first has **Edit from here**. The second and third have none, because that action rewinds to a captured checkpoint and the one from the middle run failed.",
+          ),
         ],
       }),
     ],
@@ -91,16 +100,8 @@ export const ROLLBACK_FAILED_THREAD_ID = "e06-rollback-failed";
 
 export default [
   threeRuns("e06-checkpoint-error", "error", {
-    title: "Checkpoint error: a run's changes were not captured",
-    scenario: { id: "E06", label: "Checkpoint in error", waitForText: "per-day rollup" },
-  }),
-  threeRuns("e06-checkpoint-stale", "stale", {
-    title: "Checkpoint stale: the files moved on since",
-    scenario: { id: "E06b", label: "Checkpoint stale", waitForText: "per-day rollup" },
-  }),
-  threeRuns("e06-checkpoint-missing", "missing", {
-    title: "Checkpoint missing: its snapshot was cleaned up",
-    scenario: { id: "E06c", label: "Checkpoint missing", waitForText: "per-day rollup" },
+    title: "No Edit from here after a checkpoint failed",
+    scenario: { id: "E06", label: "Checkpoint failed: Edit from here is missing", waitForText: "per-day rollup" },
   }),
   threeRuns(ROLLBACK_FAILED_THREAD_ID, "ready", {
     title: "Rollback failed: use Edit from here on the second message",

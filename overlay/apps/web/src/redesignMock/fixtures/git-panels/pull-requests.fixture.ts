@@ -1,24 +1,53 @@
 import { type ThreadPullRequestLink, type ThreadPullRequestWatch } from "@t3tools/contracts";
 import { assistant, item, thread, turn } from "~/redesignMock/api";
-import { entries, linkFor, rows, timestamp } from "./data";
+import { entries, linkFor, projectId, repository, rows, timestamp, branchOf, worktreeOf } from "./data";
+import { seedPanelsOnce, type PanelSeed } from "./panel-seed";
+
+const prSurface = (number: number) =>
+  ({
+    id: `pull-request:${projectId}:github.com:${encodeURIComponent(repository)}:${number}`,
+    kind: "pull-request",
+    projectId,
+    host: "github.com",
+    repository,
+    number,
+    url: `https://github.com/${repository}/pull/${number}`,
+    detailTab: "summary",
+  }) as const;
 
 const lifecycle = rows.map((row) =>
   thread({
     id: row.id.toLowerCase(),
     project: "git",
     title: `${row.id.startsWith("G02") ? (row.state === "open" ? (row.draft ? "Draft pull request" : "Open pull request: approved and passing") : `${row.state === "merged" ? "Merged" : "Closed"} pull request`) : row.conflicting ? "Pull request with merge conflicts" : row.rebase ? "Pull request needs a rebase" : row.checks === "failing" ? "Failing checks and changes requested" : "Pending checks and review required"}`,
-    branch: `feature/${row.id.toLowerCase()}`,
-    worktreePath: `/workspace/orbit-dashboard/${row.id.toLowerCase()}`,
+    branch: branchOf[row.number]!,
+    worktreePath: worktreeOf(branchOf[row.number]!),
     scenario: { id: row.id, label: row.title, waitForText: "pull request" },
     turns: [
       turn({
         at: "30m",
         user: row.id === "G03-failing"
           ? "Review the failing pull request. Its panel is open: click Summary, Guide, Timeline and Code to explore the review."
-          : "Review the pull request status.",
+          : row.state === "merged"
+            ? "Has the filter change landed?"
+            : row.state === "closed"
+              ? "What happened to the table change?"
+              : row.rebase
+                ? "Is the pagination branch up to date with main?"
+                : "Review the pull request status.",
         items: [
           assistant(
-            `The linked pull request is ready to inspect. Open its badge for the summary, readiness card, checks, reviews, timeline and code. ${row.conflicting ? "The summary helper conflicts with main." : row.rebase ? "The branch is three commits behind main." : row.title + "."}`,
+            `Pull request #${row.number} is open beside this chat, on its Summary tab: readiness, checks, reviews, timeline and code are one click away. ${
+              row.conflicting
+                ? "The query helpers conflict with main."
+                : row.rebase
+                  ? "The branch is three commits behind main."
+                  : row.state === "merged"
+                    ? "It was merged into main."
+                    : row.state === "closed"
+                      ? "It was closed without merging."
+                      : row.title + "."
+            }`,
           ),
         ],
       }),
@@ -57,14 +86,27 @@ const watch: ThreadPullRequestWatch = {
   wakes: 2,
   checksPending: true,
 };
+const panelSeeds: PanelSeed[] = [
+  ...rows
+    .filter((row) => row.id !== "G03-failing")
+    .map((row) => ({
+      threadId: row.id.toLowerCase(),
+      workspaceName: `Pull request #${row.number}`,
+      panel: prSurface(row.number),
+    })),
+  { threadId: "g04-native-stack", workspaceName: "Pull request stack", panel: prSurface(108) },
+  { threadId: "p04-pull-requests", workspaceName: "Pull requests", panel: { page: "pull-requests" } },
+];
+seedPanelsOnce("pull-requests", panelSeeds);
+
 export default [
   ...lifecycle,
   thread({
     id: "g04-native-stack",
     project: "git",
     title: "Three pull requests in an overview stack",
-    branch: "feature/g03-rebase",
-    worktreePath: "/workspace/orbit-dashboard/g04-stack",
+    branch: branchOf[108]!,
+    worktreePath: worktreeOf(branchOf[108]!),
     scenario: {
       id: "G04",
       label: "Native stack with three linked PRs",
@@ -77,7 +119,7 @@ export default [
         user: "Show how the overview stack fits together.",
         items: [
           assistant(
-            "The stack has three layers: overview, cached totals, then pagination. Inspect the linked pull requests to compare their checks and branches.",
+            "The stack has three layers: overview (#101), cached totals (#106), then pagination (#108). #108, the top layer, is open beside this chat; its Stack control lists the other two layers and the stack merge.",
           ),
         ],
       }),
@@ -90,8 +132,8 @@ export default [
       title: ended
         ? "Pull request watch ended after a CI wake"
         : "Watching a pull request: tests failed, approval pending",
-      branch: "feature/g03-failing",
-      worktreePath: `/workspace/orbit-dashboard/g05-${ended ? "ended" : "watch"}`,
+      branch: branchOf[105]!,
+      worktreePath: worktreeOf(branchOf[105]!),
       scenario: {
         id: ended ? "G05-ended" : "G05",
         label: "PR watch with CI and approval states",
@@ -139,7 +181,7 @@ export default [
             assistant(
               ended
                 ? "The watch ended after notifying you about Unit tests. The last observed checks remain available on the pull request."
-                : "Unit tests failed. Typecheck passed; Browser smoke is still pending and Preview deployment is awaiting approval. This planted watch stays in that state.",
+                : "Unit tests failed. Typecheck passed; Browser smoke is still pending and Preview deployment is awaiting approval. I'll keep watching until the checks settle.",
             ),
           ],
         }),
@@ -150,8 +192,8 @@ export default [
     id: "p04-pull-requests",
     project: "git",
     title: "Browse pull requests, filters and review details",
-    branch: "feature/g02-open",
-    worktreePath: "/workspace/orbit-dashboard/p04-list",
+    branch: branchOf[101]!,
+    worktreePath: worktreeOf(branchOf[101]!),
     scenario: {
       id: "P04",
       label: "Pull requests page entry point",
@@ -164,7 +206,7 @@ export default [
         user: "Where can I explore the pull request redesign?",
         items: [
           assistant(
-            "Open the **Pull requests page** from the sidebar. Filter by state, checks, review or label; select a request to inspect Summary, Guide, Timeline and Code. The approved overview has an attachment, checks and two review threads. Other requests show drafts, failures, pending checks, conflicts and a branch behind main.",
+            "The **Pull requests page** is open beside this chat. Filter by state, checks, review or label; select a request to inspect Summary, Guide, Timeline and Code. The approved overview has an attachment, checks and two review threads. Other requests show drafts, failures, pending checks, conflicts and a branch behind main.",
           ),
         ],
       }),

@@ -2,7 +2,9 @@
 // previews and a terminal, with tab strips holding several tabs (P00, covering P01 terminals,
 // P02 files and previews, P05 browser and device), and a second workspace for the thread
 // details panel (P06, left out of the planted layout so its chat has the width the panel needs)
-// and a files thread in a second workspace (P02). The layout is planted by layout-seed.ts.
+// and a files thread in a second workspace (P02). The layout is planted by layout-seed.ts. The
+// right-most column starts left of x~1100 at 1440 wide so its short tab strip leaves the corner
+// free for the preview's "Mock preview" pill (which otherwise hops to the left edge).
 import { assistant, command, fileChange, item, reasoning, thread, turn } from "~/redesignMock/api";
 
 import { seedLayoutOnce, THREAD_TERMINAL } from "./layout-seed";
@@ -71,8 +73,9 @@ const panes = thread({
             "Everything is open in this workspace:",
             "",
             "- **Left:** this chat.",
-            "- **Top right:** tabs for `README.md` (markdown, with Preview and Source), `src/summary.ts`, `data/visits.csv`, `docs/dashboard.png`, the file tree, a browser tab and the device panel.",
-            "- **Bottom right:** the terminal, with `pnpm dev` still running, `pnpm test` passed and `pnpm lint` failed.",
+            "- **Middle, top:** tabs for `README.md` (markdown, with Preview and Source), `src/summary.ts`, `data/visits.csv` and `docs/dashboard.png`.",
+            "- **Middle, bottom:** the terminal, with `pnpm dev` still running, `pnpm test` passed and `pnpm lint` failed.",
+            "- **Right:** the file tree, and below it a browser tab and the device panel.",
             "",
             "Drag a tab to another pane or to an edge to split, close one, then reopen it from the tab menu. Nothing you do here leaves your browser.",
           ].join("\n"),
@@ -118,10 +121,10 @@ const files = thread({
       items: [
         assistant(
           [
-            "The architecture notes are open beside this chat, with the file tree in the next tab.",
+            "The architecture notes are open beside this chat, with the file tree on the right.",
             "",
             "- `docs/architecture.md` has a **mermaid** flowchart: switch between Preview and Source.",
-            "- `data/visits.csv` opens as a table, `docs/dashboard.png` as an image, and any `.ts` file as code.",
+            "- The other two tabs hold `data/visits.csv`, which opens as a table, and `docs/dashboard.png`, an image. Any `.ts` file opens as code.",
             "- Search the tree by name, or open the tree's search for file contents.",
             "",
             "Edits save for this page load only; a reload brings the planted files back.",
@@ -153,7 +156,12 @@ seedLayoutOnce({
     },
     {
       threadId: FILES_THREAD_ID,
-      surfaces: [file("docs/architecture.md"), { id: "files", kind: "files" }],
+      surfaces: [
+        file("docs/architecture.md"),
+        file("data/visits.csv"),
+        file("docs/dashboard.png"),
+        { id: "files", kind: "files" },
+      ],
       activeSurfaceId: "file:docs/architecture.md",
     },
   ],
@@ -165,12 +173,12 @@ seedLayoutOnce({
       columns: [
         {
           id: "column:mock-panes-chat",
-          width: 0.42,
+          width: 0.28,
           panes: [{ id: "pane:mock-panes-chat", tabs: [{ chat: PANES_THREAD_ID }], active: 0, size: 1 }],
         },
         {
           id: "column:mock-panes-surfaces",
-          width: 0.58,
+          width: 0.45,
           panes: [
             {
               id: "pane:mock-panes-files",
@@ -179,9 +187,6 @@ seedLayoutOnce({
                 { thread: PANES_THREAD_ID, surfaceId: "file:src/summary.ts" },
                 { thread: PANES_THREAD_ID, surfaceId: "file:data/visits.csv" },
                 { thread: PANES_THREAD_ID, surfaceId: "file:docs/dashboard.png" },
-                { thread: PANES_THREAD_ID, surfaceId: "files" },
-                { thread: PANES_THREAD_ID, surfaceId: "browser:new" },
-                { thread: PANES_THREAD_ID, surfaceId: "device" },
               ],
               active: 0,
               size: 0.6,
@@ -194,6 +199,27 @@ seedLayoutOnce({
             },
           ],
         },
+        {
+          id: "column:mock-panes-tree",
+          width: 0.27,
+          panes: [
+            {
+              id: "pane:mock-panes-tree",
+              tabs: [{ thread: PANES_THREAD_ID, surfaceId: "files" }],
+              active: 0,
+              size: 0.55,
+            },
+            {
+              id: "pane:mock-panes-browser",
+              tabs: [
+                { thread: PANES_THREAD_ID, surfaceId: "browser:new" },
+                { thread: PANES_THREAD_ID, surfaceId: "device" },
+              ],
+              active: 0,
+              size: 0.45,
+            },
+          ],
+        },
       ],
     },
     {
@@ -203,23 +229,29 @@ seedLayoutOnce({
       columns: [
         {
           id: "column:mock-files-chat",
-          width: 0.45,
+          width: 0.3,
           panes: [{ id: "pane:mock-files-chat", tabs: [{ chat: FILES_THREAD_ID }], active: 0, size: 1 }],
         },
         {
           id: "column:mock-files-surfaces",
-          width: 0.55,
+          width: 0.42,
           panes: [
             {
               id: "pane:mock-files-surfaces",
               tabs: [
                 { thread: FILES_THREAD_ID, surfaceId: "file:docs/architecture.md" },
-                { thread: FILES_THREAD_ID, surfaceId: "files" },
+                { thread: FILES_THREAD_ID, surfaceId: "file:data/visits.csv" },
+                { thread: FILES_THREAD_ID, surfaceId: "file:docs/dashboard.png" },
               ],
               active: 0,
               size: 1,
             },
           ],
+        },
+        {
+          id: "column:mock-files-tree",
+          width: 0.28,
+          panes: [{ id: "pane:mock-files-tree", tabs: [{ thread: FILES_THREAD_ID, surfaceId: "files" }], active: 0, size: 1 }],
         },
       ],
     },

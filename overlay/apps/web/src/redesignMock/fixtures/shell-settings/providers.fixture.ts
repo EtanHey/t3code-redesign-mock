@@ -20,6 +20,9 @@ const updateAdvisory: ServerProvider["versionAdvisory"] = {
   checkedAt: agoIso("4m"),
   message: "A newer runtime is available.",
 };
+// No provider is planted mid-update: the app shows any running update as a blue "Updating <name>"
+// pill at the bottom of the sidebar, on every thread. Failed and finished updates are old enough
+// not to raise it, and stay visible in Settings > Providers.
 export const shellProviders: ReadonlyArray<ServerProvider> = [
   example("shellReady", "Preview: ready", {
     usageLimits: {
@@ -110,16 +113,6 @@ export const shellProviders: ReadonlyArray<ServerProvider> = [
     auth: { status: "unauthenticated" },
     message: "Sign in to use this provider.",
     setup: { canInstall: false, canAuthenticate: true },
-  }),
-  example("shellUpdating", "Preview: update running", {
-    versionAdvisory: updateAdvisory,
-    updateState: {
-      status: "running",
-      startedAt: agoIso("30s"),
-      finishedAt: null,
-      message: "Installing the runtime update",
-      output: "Resolving runtime package…\nDownloading package…",
-    },
   }),
   example("shellUpdateFailed", "Preview: update failed", {
     versionAdvisory: updateAdvisory,
