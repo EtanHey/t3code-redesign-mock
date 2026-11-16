@@ -24,14 +24,14 @@ export default [
     id: "s05-environment-tour", project: "sidebar", title: "Environments: local work and the remote build-box",
     scenario: { id: "S05", family: "sidebar", label: "Switch between local and remote projects", waitForText: "render-farm" },
     turns: [turn({ at: "4m", user: "Where is the release work running?", items: [assistant(
-      "This chat is on **Preview workstation**, in `pebble-mobile`. The Linux builds and image scan run on **build-box**, in `render-farm`. Open the environment switcher in the sidebar or start a new thread and choose its project to see both machines.\n\nOpen **Remote task running on build-box** to follow its two remote task rows. Settings → Connections also lists cache-node reconnecting, test-lab with a revoked-token diagnosis, and preview-host waiting for approval. Those disconnected machines cannot open their projects until they connect.",
+      "This chat is on **Preview workstation**, in `pebble-mobile`. The Linux builds and image scan run on **build-box**, in `render-farm`: the sidebar lists the `render-farm` threads (*Build the Linux release*, *Scan the container image*, *Drain the stuck GPU render queue*) next to the local ones, and their details panel names build-box as the environment.\n\nOpen **Remote task running on build-box** to follow its two remote task rows. The machines that are not connected (cache-node, test-lab, preview-host) cannot open their projects until they connect; see **Connections: retrying, revoked token and approval code** for them.",
     )] })],
   }),
   thread({
     id: "t04-connection-states", project: "sidebar", title: "Connections: retrying, revoked token and approval code",
     scenario: { id: "T04", family: "sidebar", label: "Connection states and diagnosis in Settings", waitForText: "QX4-7MD" },
     turns: [turn({ at: "5m", user: "Why are the other machines unavailable?", items: [assistant(
-      "Open **Settings → Connections** (the Environments page). **build-box** is connected. **cache-node** stopped answering and keeps retrying. **test-lab** has a revoked access token: expand its connection diagnosis to see the authentication failure and HTTP 401. **preview-host** is awaiting host approval; compare code **QX4-7MD** with the host.\n\nRetrying preserves the planted state in this preview. The approval must happen on the host, so it remains pending here.",
+      "[Open Settings > Connections](/settings/connections) (opens in a new tab).\n\nThe Environments page lists **build-box** as connected. **cache-node** stopped answering and keeps retrying. **test-lab** has a revoked access token: expand its connection diagnosis to see the authentication failure and HTTP 401. **preview-host** is awaiting host approval; compare code **QX4-7MD** with the host.\n\nRetrying preserves the planted state in this preview. The approval must happen on the host, so it remains pending here.",
     )] })],
   }),
   thread({
@@ -40,7 +40,7 @@ export default [
     scenario: { id: "S05-build", family: "sidebar", label: "Linux release on build-box", waitForText: "Compiling arm64" },
     thread: { createdBy: "agent", creationSource: "mcp", delegatedFrom: parent },
     turns: [turn({ at: "7m", status: "running", took: "7m", user: "Build the Linux x64 and arm64 release bundles and attach the checksums.", items: [
-      command({ input: "vp run release:linux --arch x64,arm64", status: "running", output: "x64 bundle complete: dist/app-linux-x64.tar.gz\nCompiling arm64; checksums follow when both bundles finish.\n" }),
+      command({ input: "npm run release:linux -- --arch x64,arm64", status: "running", output: "x64 bundle complete: dist/app-linux-x64.tar.gz\nCompiling arm64; checksums follow when both bundles finish.\n" }),
       assistant("The x64 bundle is ready. Compiling arm64 on build-box before generating the checksum file.", { phase: "commentary" }),
     ] })],
   }),
@@ -59,7 +59,6 @@ export default [
   thread({
     id: "remote-release-lead", environmentId: BUILD_BOX, project: RENDER_FARM,
     title: "Cut the 2.6 release candidate", branch: "main",
-    scenario: { id: "S05-lead", family: "sidebar", label: "Source of the delegated documentation check", waitForText: "documentation check" },
-    turns: [turn({ at: "16m", user: "Cut the 2.6 release candidate.", items: [assistant("The Linux build and image audit are on this machine. I delegated the documentation check to Preview workstation, where the docs toolchain is installed.")] })],
+    turns: [turn({ at: "16m", user: "Cut the 2.6 release candidate.", items: [assistant("The Linux build and image audit are on this machine. I delegated the documentation check to Preview workstation, where the docs toolchain is installed: its thread, *Delegated here from build-box*, links back to this one.")] })],
   }),
 ];

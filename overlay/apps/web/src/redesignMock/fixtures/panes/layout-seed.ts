@@ -22,6 +22,7 @@ const RIGHT_PANEL_KEY = "t3code:right-panel-state:v2";
 const RIGHT_PANEL_VERSION = 14;
 const TERMINAL_KEY = "t3code:terminal-state:v1";
 const TERMINAL_VERSION = 4;
+const RENDER_MARKDOWN_KEY = "t3code.renderMarkdown";
 const THREAD_TERMINAL: typeof LayoutModel.THREAD_TERMINAL_SURFACE_ID = "thread-terminal";
 
 /** Mirrors upstream's (unexported) ThreadTerminalUiState in terminalUiStateStore.ts. */
@@ -194,6 +195,10 @@ export function seedLayoutOnce(seed: LayoutSeed): void {
         version: persistedVersion(terminalEnvelope, TERMINAL_VERSION),
       }),
     );
+
+    // Markdown opens rendered (the app's own default is Source): the tour shows the README and the
+    // mermaid flowchart as a reader sees them. A choice the visitor already made is left alone.
+    if (storage.getItem(RENDER_MARKDOWN_KEY) === null) storage.setItem(RENDER_MARKDOWN_KEY, "true");
 
     storage.setItem(MARKER_KEY, new Date().toISOString());
   } catch (error) {

@@ -35,6 +35,8 @@ interface LimitSpec {
   readonly resetIn: string | null;
   readonly autoResume?: boolean;
   readonly snooze?: boolean;
+  /** Said by the assistant just before the run stops (the banner's own wording is cut short). */
+  readonly note?: string;
 }
 
 const LIMIT_PROMPT = "Backfill the new index for every tenant, one tenant at a time, and report the timings.";
@@ -58,6 +60,7 @@ function limited(spec: LimitSpec) {
         items: [
           assistant("Listing the tenants first so I can work through them in order.", { phase: "commentary" }),
           command({ input: "psql \"$DATABASE_URL\" -Atc \"select count(*) from tenants\"", output: "312" }),
+          ...(spec.note === undefined ? [] : [assistant(spec.note)]),
           failureItem({
             class: "usage_limit",
             message: spec.message,
@@ -185,7 +188,8 @@ export default [
     model: MODELS.sol,
     message: "Your workspace has reached its limit for using ChatGPT plans in other apps.",
     code: CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
-    resetIn: "1d",
+    resetIn: null,
+    note: "I have to stop here: your ChatGPT workspace has used up its allowance for other apps, and only a workspace admin can raise it. Use **Copy request for admin** in the banner above the composer and send the copied text to them.",
   }),
   resumed,
 ];

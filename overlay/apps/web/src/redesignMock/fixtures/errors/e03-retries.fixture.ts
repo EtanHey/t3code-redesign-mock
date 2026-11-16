@@ -32,6 +32,7 @@ const retrying = thread({
       status: "running",
       user: PROMPT,
       items: [
+        assistant("Checking the size of the export before splitting it.", { phase: "commentary" }),
         command({ input: "ls exports/2026", output: "ledger-2026.csv   412M" }),
         failureItem(CONNECTION, { status: "completed", retry: { attempt: 1, maxAttempts: 5, retryDelayMs: 1_000 } }),
         failureItem(OVERLOADED, { status: "completed", retry: { attempt: 2, maxAttempts: 5, retryDelayMs: 4_000 } }),
@@ -60,7 +61,7 @@ const recovered = thread({
           input: "node scripts/split-export.mjs exports/2026/ledger-2026.csv --by month --gzip",
           output: "wrote exports/2026/ledger-2026-01.csv.gz (31.4M)\nwrote exports/2026/ledger-2026-02.csv.gz (29.0M)\n…\nwrote exports/2026/ledger-2026-11.csv.gz (30.2M)\n11 files, 338M total",
         }),
-        assistant("The export is split into 11 compressed monthly files under `exports/2026/`. The provider dropped the connection twice early on; both retries went through."),
+        assistant("The export is split into 11 compressed monthly files under `exports/2026/`. The provider dropped the connection twice early on; both retries went through (open the \"Worked for\" row above to see them)."),
       ],
     }),
   ],
