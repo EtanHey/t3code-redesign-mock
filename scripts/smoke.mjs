@@ -295,7 +295,7 @@ if (runInteraction) {
       await page.getByText("Working for", { exact: false }).first().waitFor({ timeout: 10_000 });
     });
     await requestCase(view, "Q01 decline", `/redesign-preview/${Q01}`, "Command approval", async (page, press) => {
-      await press(page.getByRole("button", { name: "Decline" }));
+      await press(page.getByRole("button", { name: "Decline", exact: true }));
       await expectResolved(page, Q01, "decline", ["running"]);
     });
     await requestCase(view, "Q01 more: cancel", `/redesign-preview/${Q01}`, "Command approval", async (page, press) => {
