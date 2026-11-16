@@ -5,6 +5,7 @@ import {
   OrchestrationV2Command,
   OrchestrationV2ThreadLaunchInput,
   OrchestrationV2ThreadProjection,
+  ProjectId,
   WS_METHODS,
   type EnvironmentId,
   type OrchestrationV2Run,
@@ -16,6 +17,7 @@ import { BASELINE_PROVIDERS, baselineDefinitions, handlerMaps } from "./baseline
 import { agoIso, atTime, nowMs } from "./clock";
 import { ENVIRONMENT_ID, ENVIRONMENT_LABEL, PLANTED_PROJECTS, projectIdOf, workspaceRootOf } from "./constants";
 import { rpc, type AnyCommandReaction, type AnyStreamHandler, type AnyUnaryHandler } from "./definitions";
+import { MockAssets } from "./assets";
 import { MockEnvironment } from "./environment";
 import { VisitorLog, type LogEntry } from "./persistence";
 import { launchThread, reduceCommand } from "./reducer";
@@ -147,6 +149,23 @@ function boot(): MockRuntime {
       entry.order,
     );
   }
+  for (const { definition } of registry.environments) {
+    for (const [index, project] of (definition.projects ?? []).entries()) {
+      environments.get(definition.environmentId)?.server.upsertProject(
+        {
+          id: ProjectId.make(project.id),
+          title: project.title,
+          workspaceRoot: `/workspace/${project.title}`,
+          repositoryIdentity: null,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: agoIso("20d"),
+          updatedAt: agoIso("1d"),
+        },
+        index,
+      );
+    }
+  }
   for (const { definition } of registry.projects) {
     environments.get(definition.environmentId ?? ENVIRONMENT_ID)?.server.upsertProject(definition.project, definition.order);
   }
@@ -172,6 +191,11 @@ function boot(): MockRuntime {
 
   for (const environment of environments.values()) {
     const server = environment.server;
+    environment.assets = new MockAssets(
+      registry.assets
+        .map(({ definition }) => definition)
+        .filter((definition) => (definition.environmentId ?? ENVIRONMENT_ID) === environment.environmentId),
+    );
     const dispatch = rpc(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, (payload) => {
       const command = toCommand(payload);
       log.append({ kind: "command", at: nowMs(), environmentId: environment.environmentId, command });

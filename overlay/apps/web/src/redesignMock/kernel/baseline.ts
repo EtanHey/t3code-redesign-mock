@@ -192,10 +192,15 @@ export function baselineDefinitions(
     })),
     rpc(WS_METHODS.reviewGetDiffPreview, (input) => ({ cwd: input.cwd, generatedAt: now(), sources: [] })),
     rpc(WS_METHODS.serverDiscoverSourceControl, () => ({ versionControlSystems: [], sourceControlProviders: [] })),
-    rpc(WS_METHODS.assetsCreateUrl, (input) => ({
-      relativeUrl: `/api/assets/mock/${encodeURIComponent(JSON.stringify(input).slice(0, 120))}`,
-      expiresAt: Date.parse(iso(now())) + 3_600_000,
-    })),
+    rpc(
+      WS_METHODS.assetsCreateUrl,
+      (input) =>
+        // Registered content first; anything else gets the guard's placeholder image.
+        environment.assets.createUrl(input.resource) ?? {
+          relativeUrl: `/api/assets/mock/${encodeURIComponent(JSON.stringify(input).slice(0, 120))}`,
+          expiresAt: Date.parse(iso(now())) + 3_600_000,
+        },
+    ),
   ];
 }
 

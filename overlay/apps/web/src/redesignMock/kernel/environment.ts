@@ -25,6 +25,7 @@ import { APP_VERSION } from "~/branding";
 
 import { iso, now } from "./clock";
 import type { AnyCommandReaction, AnyStreamHandler, AnyUnaryHandler, HandlerContext } from "./definitions";
+import { MockAssets } from "./assets";
 import type { Sourced } from "./registry";
 import { liveStream, MockServer } from "./server";
 
@@ -90,6 +91,8 @@ export interface EnvironmentHandlers {
 
 export class MockEnvironment {
   readonly server: MockServer;
+  /** Content fixtures registered with `asset(...)` for this environment; set at boot. */
+  assets = new MockAssets([]);
   readonly descriptor: ExecutionEnvironmentDescriptor;
   providers: ServerProvider[];
   settings: ServerSettings;
