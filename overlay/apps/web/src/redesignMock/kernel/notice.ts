@@ -15,6 +15,8 @@ export const NOTICE_STORAGE_KEYS: ReadonlyArray<string> = [];
 
 const PR_URL = "https://github.com/pingdotgg/t3code/pull/28845";
 const REPO_URL = "https://github.com/EtanHey/t3code-redesign-mock";
+const MARIA_URL = "https://github.com/maria-rcks";
+const ETAN_URL = "https://github.com/EtanHey";
 
 const STYLE = `
 .rdm-notice{position:fixed;z-index:2147483000;font:500 11.5px/1.35 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#f5f5f4}
@@ -25,6 +27,8 @@ const STYLE = `
 .rdm-card{position:fixed;width:min(320px,calc(100vw - 24px));padding:12px 12px 10px;border-radius:12px;background:rgba(24,24,27,.96);box-shadow:0 0 0 1px rgba(255,255,255,.12),0 12px 32px rgba(0,0,0,.4)}
 .rdm-card b{display:block;font-size:12.5px;font-weight:650;margin-bottom:4px}
 .rdm-card p{margin:0 0 10px;color:#a1a1aa}
+.rdm-card p a{color:#f5f5f4;text-decoration:underline;text-underline-offset:2px}
+.rdm-card p a:hover{color:#fff}
 .rdm-card code{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#d4d4d8}
 .rdm-actions{display:flex;flex-wrap:wrap;gap:6px}
 .rdm-link,.rdm-button{color:#f5f5f4;text-decoration:none;border:0;background:rgba(255,255,255,.08);border-radius:999px;padding:3px 9px;font:inherit;cursor:pointer;white-space:nowrap}
@@ -170,6 +174,12 @@ function link(text: string, href: string): HTMLAnchorElement {
   return anchor;
 }
 
+function inlineLink(text: string, href: string): HTMLAnchorElement {
+  const anchor = link(text, href);
+  anchor.className = "";
+  return anchor;
+}
+
 function buildCard(runtime: MockRuntime): HTMLDivElement {
   const card = document.createElement("div");
   card.className = "rdm-card";
@@ -187,6 +197,8 @@ function buildCard(runtime: MockRuntime): HTMLDivElement {
     branch,
     `, built ${built || "recently"} and rebuilt every hour. Nothing here is real, and what you do stays in this browser.`,
   );
+  const credit = document.createElement("p");
+  credit.append("Redesign by ", inlineLink("Maria", MARIA_URL), ". Mock by ", inlineLink("Etan", ETAN_URL), ".");
   body.title = `Commit ${BUILD_INFO.commit}\nCommitted ${BUILD_INFO.committedAt || "unknown"}\nBuilt ${BUILD_INFO.builtAt}\nFixtures ${BUILD_INFO.fixtureVersion}`;
 
   const reset = document.createElement("button");
@@ -211,7 +223,7 @@ function buildCard(runtime: MockRuntime): HTMLDivElement {
   const actions = document.createElement("div");
   actions.className = "rdm-actions";
   actions.append(link("PR #28845", PR_URL), link("Mock source", REPO_URL), reset);
-  card.append(title, body, actions);
+  card.append(title, body, credit, actions);
   return card;
 }
 
@@ -227,7 +239,7 @@ export function mountNotice(runtime: MockRuntime): void {
   const pill = document.createElement("button");
   pill.className = "rdm-pill";
   pill.type = "button";
-  pill.title = "Unofficial mock preview: nothing here is real";
+  pill.title = "Unofficial mock preview: Maria's redesign, mocked by Etan. Nothing here is real";
   pill.setAttribute("aria-label", "About this mock preview");
   pill.setAttribute("aria-expanded", "false");
   const dot = document.createElement("span");
