@@ -17,6 +17,8 @@ const PR_URL = "https://github.com/pingdotgg/t3code/pull/28845";
 const REPO_URL = "https://github.com/EtanHey/t3code-redesign-mock";
 const MARIA_URL = "https://github.com/maria-rcks";
 const ETAN_URL = "https://github.com/EtanHey";
+const MARIA_X = "https://x.com/maria_rcks";
+const ETAN_X = "https://x.com/EtanHey";
 
 const STYLE = `
 .rdm-notice{position:fixed;z-index:2147483000;font:500 11.5px/1.35 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#f5f5f4}
@@ -198,7 +200,17 @@ function buildCard(runtime: MockRuntime): HTMLDivElement {
     `, built ${built || "recently"} and rebuilt every hour. Nothing here is real, and what you do stays in this browser.`,
   );
   const credit = document.createElement("p");
-  credit.append("Redesign by ", inlineLink("Maria", MARIA_URL), ". Mock by ", inlineLink("Etan", ETAN_URL), ".");
+  credit.append(
+    "Redesign by Maria (",
+    inlineLink("GitHub", MARIA_URL),
+    ", ",
+    inlineLink("X", MARIA_X),
+    "). Mock by Etan (",
+    inlineLink("GitHub", ETAN_URL),
+    ", ",
+    inlineLink("X", ETAN_X),
+    ").",
+  );
   body.title = `Commit ${BUILD_INFO.commit}\nCommitted ${BUILD_INFO.committedAt || "unknown"}\nBuilt ${BUILD_INFO.builtAt}\nFixtures ${BUILD_INFO.fixtureVersion}`;
 
   const reset = document.createElement("button");
