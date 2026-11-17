@@ -16,7 +16,9 @@ This is an unofficial community preview. It is not affiliated with T3 Tools.
   - `overlay/apps/web/src/redesignMock/` is the mock: the fake server kernel, RPC handlers, fixtures.
   - `overlay/apps/web/vite.mock.config.ts` is the build config that swaps in the fake.
 - `scripts/` holds `sync.sh` (copy overlay into upstream), `check.sh` (sync, typecheck, build, smoke),
-  `build.sh` (produce `dist/`), `dev.sh` (local dev server), `setup-worktree.sh`.
+  `build.sh` (produce `dist/`; two passes, so a first visit loads a few chunks instead of hundreds),
+  `dev.sh` (local dev server), `setup-worktree.sh`, and `measure-load.mjs` (requests, bytes and
+  time to the composer for a cold visit over a built `dist/`).
 - `docs.local/` is gitignored working material (plan, briefs, recon, screenshots).
 
 ## Rules

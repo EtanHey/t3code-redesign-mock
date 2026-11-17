@@ -26,7 +26,15 @@ rm -rf "$out"
     MOCK_UPSTREAM_COMMIT="$commit" MOCK_UPSTREAM_BRANCH="$branch" \
     MOCK_UPSTREAM_DATE="$committed_at" MOCK_BUILT_AT="$built_at" \
     MOCK_OUT_DIR="$out" T3CODE_WEB_SOURCEMAP=0 \
-    vp build -c vite.mock.config.ts --emptyOutDir
+    bash -c '
+      set -euo pipefail
+      # Two passes (see boot chunks in overlay/apps/web/vite/redesignMock.ts): the plan pass finds
+      # what a first visit loads, then the real build groups exactly that into a few files.
+      plan="node_modules/.redesign-mock/boot-plan.json"
+      rm -f "$plan"
+      MOCK_BOOT_PLAN_WRITE="$plan" vp build -c vite.mock.config.ts --logLevel warn
+      MOCK_BOOT_PLAN="$plan" vp build -c vite.mock.config.ts --emptyOutDir
+    '
 )
 
 # Path routes (/<environment>/<thread>) load the app shell.

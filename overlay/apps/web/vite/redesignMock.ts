@@ -232,6 +232,200 @@ function htmlPlugin(): Plugin[] {
   ];
 }
 
+// Fewer files per visit. The bootstrap imports `src/main.tsx` dynamically, and every chunk main
+// imports statically loads before the first paint. Rolldown cuts that set into several hundred
+// small chunks (one per combination of lazy chunks sharing a module), so a cold visit made about
+// 440 requests. The build runs twice (scripts/build.sh): a plan pass with Rolldown's own chunking
+// records which modules land in the chunks a first visit loads, and the real pass groups exactly
+// those modules into a few chunks by area. The first visit loads the same modules as before, in
+// fewer files, and nothing lazy (document viewers, Shiki grammars and themes, fonts, models,
+// pdf.js, the full icon map) moves into it. A graph walk cannot stand in for the plan pass: it
+// follows every re-export of a barrel such as lucide-react, and tree shaking is what drops those.
+const MAIN = NodePath.join(webRoot, "src/main.tsx");
+
+/** What the plan pass found: the modules each part of a first visit loads. */
+interface BootPlan {
+  /** Loaded with the HTML entry, before the bootstrap runs (the mock's install and kernel). */
+  readonly shell: ReadonlyArray<string>;
+  /** Loaded with main.tsx, before the first paint. */
+  readonly boot: ReadonlyArray<string>;
+}
+
+/** The package a node_modules path belongs to, or null for the repo's own files. */
+function packageOf(path: string): string | null {
+  const nodeModules = path.lastIndexOf("/node_modules/");
+  if (nodeModules === -1) return null;
+  const [scope = "", name = ""] = path.slice(nodeModules + "/node_modules/".length).split("/");
+  return scope.startsWith("@") ? `${scope}/${name}` : scope;
+}
+
+/**
+ * Boot chunks by area; a module goes to the first area that matches. Areas that change at
+ * different times stay apart, so a rebuild after an upstream commit can leave the library chunks
+ * alone. Areas whose modules import each other are merged at build time (see `mergeCycles`).
+ */
+const BOOT_AREAS: ReadonlyArray<{ readonly name: string; readonly test: (path: string) => boolean }> = [
+  { name: "react", test: (path) => /^(react|react-dom|scheduler|use-sync-external-store)$/.test(packageOf(path) ?? "") },
+  { name: "effect", test: (path) => /^(effect|@effect\/.*)$/.test(packageOf(path) ?? "") },
+  { name: "icons", test: (path) => packageOf(path) === "lucide-react" },
+  { name: "editor", test: (path) => /^(@tiptap\/|prosemirror-)/.test(packageOf(path) ?? "") },
+  { name: "markdown", test: (path) => /^(micromark|mdast-|hast-|unist-|vfile|unified|parse5|property-information)/.test(packageOf(path) ?? "") },
+  { name: "vendor", test: (path) => packageOf(path) !== null },
+  { name: "packages", test: (path) => path.startsWith(`${repoRoot}/packages/`) },
+  { name: "app", test: () => true },
+];
+
+type ChunkGroup = { name: string | ((id: string) => string | null); priority: number; test?: (id: string) => boolean };
+
+const areaOf = (id: string): string =>
+  BOOT_AREAS.find((area) => area.test(id.split("?")[0] ?? id))?.name ?? "app";
+
+/**
+ * Groups capture only the modules the plan lists, not their dependencies: following dependencies
+ * would follow a barrel such as lucide-react to every icon it re-exports. Without that, two areas
+ * that import each other would become two chunks that import each other, which can run a chunk
+ * before the values it needs exist (upstream's chunk-cycle guard fails the build on it). So areas
+ * that reach each other through imports between boot modules share one chunk.
+ */
+function mergeCycles(boot: ReadonlySet<string>, importsOf: (id: string) => ReadonlyArray<string>): Map<string, string> {
+  const names = BOOT_AREAS.map((area) => area.name);
+  const reach = new Map(names.map((name) => [name, new Set([name])]));
+  for (const id of boot) {
+    const from = areaOf(id);
+    for (const imported of importsOf(id)) if (boot.has(imported)) reach.get(from)?.add(areaOf(imported));
+  }
+  // Transitive closure over a handful of areas.
+  for (const via of names) {
+    for (const from of names) {
+      if (reach.get(from)?.has(via)) for (const to of reach.get(via) ?? []) reach.get(from)?.add(to);
+    }
+  }
+  return new Map(
+    names.map((name) => [
+      name,
+      names.filter((other) => reach.get(name)?.has(other) && reach.get(other)?.has(name)).join("-"),
+    ]),
+  );
+}
+
+/** Static imports of the given chunks, followed to the end. */
+function staticClosure(bundle: Record<string, { type: string; imports?: ReadonlyArray<string> }>, roots: Iterable<string>): Set<string> {
+  const seen = new Set<string>();
+  const queue = [...roots];
+  while (queue.length > 0) {
+    const fileName = queue.pop();
+    if (fileName === undefined || seen.has(fileName)) continue;
+    seen.add(fileName);
+    queue.push(...(bundle[fileName]?.imports ?? []));
+  }
+  return seen;
+}
+
+/**
+ * The two passes. `MOCK_BOOT_PLAN_WRITE=<file>` is the plan pass: Rolldown's own chunking, nothing
+ * written to disk but the plan. `MOCK_BOOT_PLAN=<file>` is the real pass: group what the plan lists.
+ * With neither (dev, or a bare `vp build`), chunking is upstream's.
+ */
+function bootChunks(command: "build" | "serve"): { plugins: Plugin[]; groups: ChunkGroup[] | null } {
+  const writePlan = command === "build" ? process.env.MOCK_BOOT_PLAN_WRITE?.trim() : undefined;
+  const readPlan = command === "build" && !writePlan ? process.env.MOCK_BOOT_PLAN?.trim() : undefined;
+
+  if (writePlan) {
+    return {
+      groups: null,
+      plugins: [
+        {
+          name: "redesign-mock:boot-plan",
+          apply: "build",
+          config: () => ({ build: { write: false } }),
+          generateBundle(_options, bundle) {
+            const chunks = Object.values(bundle).flatMap((output) => (output.type === "chunk" ? [output] : []));
+            const entries = chunks.filter((chunk) => chunk.isEntry);
+            const main = chunks.find((chunk) => chunk.moduleIds.includes(MAIN));
+            if (!main) this.error(`redesign-mock: no chunk holds ${NodePath.relative(webRoot, MAIN)}`);
+            const shellFiles = staticClosure(bundle, entries.map((chunk) => chunk.fileName));
+            const bootFiles = staticClosure(bundle, [main.fileName]);
+            const entryModules = new Set(entries.flatMap((chunk) => (chunk.facadeModuleId ? [chunk.facadeModuleId] : [])));
+            // Rolldown's runtime is not a graph module and Rolldown places it itself; its other
+            // helpers (the dynamic import helper) are modules and get grouped like any other.
+            const graph = new Set(this.getModuleIds());
+            const modulesOf = (files: Set<string>, skip: Set<string>) =>
+              chunks
+                .filter((chunk) => files.has(chunk.fileName) && !skip.has(chunk.fileName))
+                .flatMap((chunk) => chunk.moduleIds.filter((id) => !entryModules.has(id) && graph.has(id)));
+            const plan: BootPlan = { shell: modulesOf(shellFiles, new Set()), boot: modulesOf(bootFiles, shellFiles) };
+            NodeFS.mkdirSync(NodePath.dirname(writePlan), { recursive: true });
+            NodeFS.writeFileSync(writePlan, JSON.stringify(plan));
+          },
+        },
+      ],
+    };
+  }
+  if (!readPlan) return { groups: null, plugins: [] };
+
+  const plan = JSON.parse(NodeFS.readFileSync(readPlan, "utf8")) as BootPlan;
+  const shell = new Set(plan.shell);
+  const boot = new Set(plan.boot);
+  if (!boot.has(MAIN)) throw new Error(`redesign-mock: the boot plan ${readPlan} does not list main.tsx`);
+  let chunkOfArea: Map<string, string> | null = null;
+  const groups: ChunkGroup[] = [
+    // The mock's install and kernel load with the HTML entry, before the bootstrap; they stay
+    // apart from the boot chunks so the entry never imports app code.
+    { name: "shell", priority: 2, test: (id) => shell.has(id) },
+    {
+      name: (id) => {
+        // main.tsx is what the bootstrap imports; it keeps its own chunk, which imports the rest.
+        // Grouped, Rolldown leaves a facade for it that and the group import each other.
+        if (!boot.has(id) || id === MAIN) return null;
+        // Chunking runs after `buildEnd`; a grouping without the merge map would be wrong.
+        if (!chunkOfArea) throw new Error("redesign-mock: chunk grouping ran before the module graph was ready");
+        return `boot-${chunkOfArea.get(areaOf(id)) ?? "app"}`;
+      },
+      priority: 1,
+    },
+  ];
+  return {
+    groups,
+    plugins: [
+      {
+        name: "redesign-mock:boot-chunks",
+        apply: "build",
+        buildEnd(error) {
+          if (error) return;
+          // A plan from another graph (a stale file, a different upstream commit) would group
+          // the wrong modules; the plan pass runs right before this one, so any drift is a bug.
+          const graph = new Set(this.getModuleIds());
+          const missing = [...shell, ...boot].filter((id) => !graph.has(id));
+          if (missing.length > 0) {
+            this.error(`redesign-mock: the boot plan lists ${missing.length} modules this build does not have, e.g. ${missing[0]}`);
+          }
+          chunkOfArea = mergeCycles(boot, (id) => this.getModuleInfo(id)?.importedIds ?? []);
+        },
+        generateBundle(_options, bundle) {
+          const chunks = Object.values(bundle).flatMap((output) => (output.type === "chunk" ? [output] : []));
+          // The failure this grouping could cause: the entry loading app code before the bootstrap.
+          const entryFiles = staticClosure(bundle, chunks.filter((chunk) => chunk.isEntry).map((chunk) => chunk.fileName));
+          const leaked = chunks.find((chunk) => entryFiles.has(chunk.fileName) && chunk.name.startsWith("boot-"));
+          if (leaked) this.error(`redesign-mock: the HTML entry statically imports the boot chunk ${leaked.fileName}`);
+          // And the one it exists to prevent: a first visit growing. Every module main loads
+          // statically must be one the plan pass found it loading.
+          const main = chunks.find((chunk) => chunk.moduleIds.includes(MAIN));
+          if (!main) this.error(`redesign-mock: no chunk holds ${NodePath.relative(webRoot, MAIN)}`);
+          const firstVisit = staticClosure(bundle, [main.fileName]);
+          const graph = new Set(this.getModuleIds());
+          const extra = chunks
+            .filter((chunk) => firstVisit.has(chunk.fileName))
+            .flatMap((chunk) => chunk.moduleIds)
+            .filter((id) => !boot.has(id) && !shell.has(id) && graph.has(id));
+          if (extra.length > 0) {
+            this.error(`redesign-mock: grouping added ${extra.length} modules to the first visit, e.g. ${extra[0]}`);
+          }
+        },
+      },
+    ],
+  };
+}
+
 /** The parts of the mock build that sit on top of upstream's own config. */
 export function redesignMockConfig(command: "build" | "serve"): UserConfig {
   const info = readBuildInfo();
@@ -239,8 +433,9 @@ export function redesignMockConfig(command: "build" | "serve"): UserConfig {
     __REDESIGN_MOCK_BUILD__: JSON.stringify(info),
   };
   for (const key of FORCED_EMPTY_ENV) define[`import.meta.env.${key}`] = JSON.stringify("");
+  const chunks = bootChunks(command);
   return {
-    plugins: [seamPlugin(), designSystemPlugin(command), ...htmlPlugin()],
+    plugins: [seamPlugin(), designSystemPlugin(command), ...htmlPlugin(), ...chunks.plugins],
     define,
     build: {
       outDir: process.env.MOCK_OUT_DIR?.trim() || "dist-mock",
@@ -248,6 +443,7 @@ export function redesignMockConfig(command: "build" | "serve"): UserConfig {
       // Mock assets stay real files: the app adds `?revision=` to asset URLs, which a data: URL
       // cannot carry. Everything else keeps upstream's inlining.
       assetsInlineLimit: (filePath: string) => (filePath.includes("/redesignMock/") ? false : undefined),
+      ...(chunks.groups ? { rolldownOptions: { output: { codeSplitting: { includeDependenciesRecursively: false, groups: chunks.groups } } } } : {}),
     },
     ...(command === "serve" ? { server: { port: Number(process.env.PORT ?? 5833) } } : {}),
   };
