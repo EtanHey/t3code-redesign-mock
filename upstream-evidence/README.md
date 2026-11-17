@@ -18,3 +18,5 @@ hers is the preview's notice pill, which matches none of these selectors.
 | `tab-strip-single-tab.png` | one tab, eight zoom levels |
 
 Both diffs apply cleanly to `c4e5dfd0`, separately and together.
+
+- `real-zoom-a.png` … `real-zoom-d.png`: the pane tab's right end at four fractional browser zooms (real Cmd+/- zoom in a Chromium browser, live preview), showing the fill continuing past the rounded corner. Referenced from pingdotgg/t3code#37497.
