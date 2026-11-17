@@ -1,0 +1,67 @@
+{
+  "summary": {
+    "dist": "dist-after",
+    "runs": 3,
+    "throttle": true,
+    "composerMs": 1308,
+    "first": {
+      "requests": 29,
+      "kB": 2525
+    },
+    "thread": {
+      "requests": 5,
+      "kB": 163
+    },
+    "settings": {
+      "requests": 25,
+      "kB": 102
+    }
+  },
+  "results": [
+    {
+      "composerMs": 1324.9000000059605,
+      "first": {
+        "requests": 29,
+        "bytes": 2585372
+      },
+      "thread": {
+        "requests": 5,
+        "bytes": 166851
+      },
+      "settings": {
+        "requests": 25,
+        "bytes": 104578
+      }
+    },
+    {
+      "composerMs": 1308.199999988079,
+      "first": {
+        "requests": 29,
+        "bytes": 2585372
+      },
+      "thread": {
+        "requests": 5,
+        "bytes": 166851
+      },
+      "settings": {
+        "requests": 25,
+        "bytes": 104578
+      }
+    },
+    {
+      "composerMs": 1298.800000011921,
+      "first": {
+        "requests": 29,
+        "bytes": 2585372
+      },
+      "thread": {
+        "requests": 5,
+        "bytes": 166851
+      },
+      "settings": {
+        "requests": 25,
+        "bytes": 104578
+      }
+    }
+  ]
+}
