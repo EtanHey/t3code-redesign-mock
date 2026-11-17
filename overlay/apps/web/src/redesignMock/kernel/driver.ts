@@ -80,7 +80,7 @@ export const mockDriver = {
       };
       yield* reportProgress({ stage: "opening", prepared });
       yield* reportProgress({ stage: "synchronizing", prepared });
-      return { prepared, session: environment.session };
+      return { prepared, session: environment.session, refusedRouteIds: [] };
     }),
   preflight: () => Effect.succeed("ready" as const),
   checkHost: () => Effect.succeed<RouteCheck>("answered"),
