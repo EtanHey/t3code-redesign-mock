@@ -31,6 +31,11 @@ const STYLE = `
 .rdm-card p{margin:0 0 10px;color:#a1a1aa}
 .rdm-card p a{color:#f5f5f4;text-decoration:underline;text-underline-offset:2px}
 .rdm-card p a:hover{color:#fff}
+.rdm-credit{display:flex;flex-direction:column;gap:3px}
+.rdm-credit span{display:flex;align-items:center;gap:5px}
+.rdm-card .rdm-x{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;color:#a1a1aa;text-decoration:none}
+.rdm-card .rdm-x:hover{color:#fff;background:rgba(255,255,255,.1)}
+.rdm-x svg{width:10px;height:10px;fill:currentColor}
 .rdm-card code{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#d4d4d8}
 .rdm-actions{display:flex;flex-wrap:wrap;gap:6px}
 .rdm-link,.rdm-button{color:#f5f5f4;text-decoration:none;border:0;background:rgba(255,255,255,.08);border-radius:999px;padding:3px 9px;font:inherit;cursor:pointer;white-space:nowrap}
@@ -182,6 +187,29 @@ function inlineLink(text: string, href: string): HTMLAnchorElement {
   return anchor;
 }
 
+const X_LOGO =
+  "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z";
+
+/** "Mock by EtanHey 𝕏": the handle links to GitHub, the X logo to the X profile. */
+function creditLine(role: string, handle: string, github: string, x: string): HTMLSpanElement {
+  const line = document.createElement("span");
+  const xLink = inlineLink("", x);
+  xLink.className = "rdm-x";
+  xLink.setAttribute("aria-label", `${handle} on X`);
+  xLink.title = `${handle} on X`;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", X_LOGO);
+  svg.append(path);
+  xLink.append(svg);
+  const githubLink = inlineLink(handle, github);
+  githubLink.title = `${handle} on GitHub`;
+  line.append(`${role} `, githubLink, xLink);
+  return line;
+}
+
 function buildCard(runtime: MockRuntime): HTMLDivElement {
   const card = document.createElement("div");
   card.className = "rdm-card";
@@ -200,16 +228,10 @@ function buildCard(runtime: MockRuntime): HTMLDivElement {
     `, built ${built || "recently"} and rebuilt every hour. Nothing here is real, and what you do stays in this browser.`,
   );
   const credit = document.createElement("p");
+  credit.className = "rdm-credit";
   credit.append(
-    "Redesign by Maria (",
-    inlineLink("GitHub", MARIA_URL),
-    ", ",
-    inlineLink("X", MARIA_X),
-    "). Mock by Etan (",
-    inlineLink("GitHub", ETAN_URL),
-    ", ",
-    inlineLink("X", ETAN_X),
-    ").",
+    creditLine("Redesigned by", "maria-rcks", MARIA_URL, MARIA_X),
+    creditLine("Mock by", "EtanHey", ETAN_URL, ETAN_X),
   );
   body.title = `Commit ${BUILD_INFO.commit}\nCommitted ${BUILD_INFO.committedAt || "unknown"}\nBuilt ${BUILD_INFO.builtAt}\nFixtures ${BUILD_INFO.fixtureVersion}`;
 
