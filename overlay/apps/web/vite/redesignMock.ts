@@ -420,6 +420,12 @@ function bootChunks(command: "build" | "serve"): { plugins: Plugin[]; groups: Ch
           if (extra.length > 0) {
             this.error(`redesign-mock: grouping added ${extra.length} modules to the first visit, e.g. ${extra[0]}`);
           }
+          // Rolldown only warns on an unknown output option (it renamed this one before), so
+          // a grouping that silently stopped applying must fail here, not ship ~400 requests.
+          if (!chunks.some((chunk) => chunk.name === "shell") || !chunks.some((chunk) => chunk.name.startsWith("boot-"))) {
+            this.error("redesign-mock: chunk grouping did not apply (no shell or boot- chunk); check rolldownOptions.output.codeSplitting");
+          }
+          if (firstVisit.size > 40) this.error(`redesign-mock: the first visit loads ${firstVisit.size} JS files (limit 40)`);
         },
       },
     ],
