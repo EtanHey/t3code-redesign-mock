@@ -1,0 +1,1 @@
+import{i as e}from"./rolldown-runtime-COiEfhsA.js";import{l as t,u as n}from"./boot-react-BPpxDtWi.js";import{Xr as r,ti as i,wr as a}from"./boot-app-BkwEFNoI.js";var o=n(),s=e(t());function c(){let e=(0,o.c)(4),t=r(),n;e[0]===t.search?n=e[1]:(n=i(t.search),e[0]=t.search,e[1]=n);let c=n,l;return e[2]===c?l=e[3]:(l=(0,s.jsx)(a,{...c}),e[2]=c,e[3]=l),l}export{c as component};

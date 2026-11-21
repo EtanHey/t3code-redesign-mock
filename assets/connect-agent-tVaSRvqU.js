@@ -1,0 +1,1 @@
+import{ka as e}from"./boot-app-BkwEFNoI.js";var t=e;export{t as component};

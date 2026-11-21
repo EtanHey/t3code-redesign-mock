@@ -1,0 +1,1 @@
+import{i as e}from"./rolldown-runtime-COiEfhsA.js";import{l as t,u as n}from"./boot-react-BPpxDtWi.js";import{a as r}from"./SettingsPanels-CYidaViV.js";var i=n(),a=e(t());function o(){let e=(0,i.c)(1),t;return e[0]===Symbol.for(`react.memo_cache_sentinel`)?(t=(0,a.jsx)(r,{}),e[0]=t):t=e[0],t}export{o as component};
