@@ -290,9 +290,18 @@ const areaOf = (id: string): string =>
 function mergeCycles(boot: ReadonlySet<string>, importsOf: (id: string) => ReadonlyArray<string>): Map<string, string> {
   const names = BOOT_AREAS.map((area) => area.name);
   const reach = new Map(names.map((name) => [name, new Set([name])]));
-  for (const id of boot) {
-    const from = areaOf(id);
-    for (const imported of importsOf(id)) if (boot.has(imported)) reach.get(from)?.add(areaOf(imported));
+  // Imports can pass through modules tree shaking dropped from the first visit, such as a
+  // package's re-exporting index.js, so walk through those to the boot modules they lead to.
+  for (const name of names) {
+    const seen = new Set<string>();
+    const queue = [...boot].filter((id) => areaOf(id) === name).flatMap((id) => importsOf(id));
+    while (queue.length > 0) {
+      const id = queue.pop();
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      if (boot.has(id)) reach.get(name)?.add(areaOf(id));
+      else queue.push(...importsOf(id));
+    }
   }
   // Transitive closure over a handful of areas.
   for (const via of names) {
