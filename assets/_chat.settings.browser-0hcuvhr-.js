@@ -1,0 +1,1 @@
+import{t as e}from"./IntegrationsSettings-D74ypN90.js";var t=e;export{t as component};

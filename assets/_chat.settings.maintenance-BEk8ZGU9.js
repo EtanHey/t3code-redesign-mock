@@ -1,0 +1,1 @@
+import{o as e}from"./SettingsPanels-DlemTNu9.js";var t=e;export{t as component};

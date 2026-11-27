@@ -1,0 +1,1 @@
+function e(e){switch(e){case`connected`:return`success`;case`connecting`:case`reconnecting`:return`warning`;case`error`:return`danger`;default:return`neutral`}}function t(e){return e===`connecting`||e===`reconnecting`}export{e as n,t};

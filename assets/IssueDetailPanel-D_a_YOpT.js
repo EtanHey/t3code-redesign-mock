@@ -1,0 +1,1 @@
+export{t as IssueDetailPanel}from"./IssueDetailPanel-DtAbfr92.js";

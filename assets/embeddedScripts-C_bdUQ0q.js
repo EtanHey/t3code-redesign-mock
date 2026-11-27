@@ -1,0 +1,1 @@
+export{Si as embeddedScripts,Ci as withEmbeddedScripts}from"./boot-packages-BnTscVLm.js";

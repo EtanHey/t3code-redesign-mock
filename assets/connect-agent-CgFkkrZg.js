@@ -1,0 +1,1 @@
+import{Fl as e}from"./boot-app-DMjTP0g0.js";var t=e;export{t as component};

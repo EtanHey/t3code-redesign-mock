@@ -1,0 +1,1 @@
+import{i as e}from"./rolldown-runtime-COiEfhsA.js";import{l as t,u as n}from"./boot-react-BPpxDtWi.js";var r=n(),i=`/assets/t3-black-web-apple-touch-180-CkNIZSlO.png`,a=e(t(),1);function o(e){let t=(0,r.c)(2),n;return t[0]===e.className?n=t[1]:(n=(0,a.jsx)(`img`,{src:i,alt:``,className:e.className}),t[0]=e.className,t[1]=n),n}export{o as t};
